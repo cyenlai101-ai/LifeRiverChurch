@@ -221,6 +221,36 @@ a {
   width: min(720px, 92vw);
 }
 
+.event-modal-panel .form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.event-modal-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 20px;
+  align-items: start;
+}
+
+.event-modal-right {
+  position: sticky;
+  top: 16px;
+}
+
+.poster-preview-empty {
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+  text-align: center;
+}
+
+.time-preview {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+}
+
 .modal-form {
   display: grid;
   gap: 12px;
@@ -504,6 +534,10 @@ textarea {
   min-height: 90px;
 }
 
+.textarea-large {
+  min-height: 160px;
+}
+
 .poster-preview {
   border-radius: 12px;
   overflow: hidden;
@@ -514,8 +548,8 @@ textarea {
 .poster-preview img {
   width: 100%;
   display: block;
-  object-fit: cover;
-  max-height: 260px;
+  object-fit: contain;
+  height: 300px;
 }
 
 .button-row {
@@ -578,6 +612,10 @@ textarea {
   gap: 16px;
 }
 
+.event-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .user-card {
   background: white;
   border-radius: 16px;
@@ -588,18 +626,48 @@ textarea {
   box-shadow: 0 12px 20px rgba(15, 23, 42, 0.08);
 }
 
+.event-filter-grid {
+  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 240px));
+  justify-content: start;
+}
+
+.event-card {
+  grid-template-columns: minmax(0, 1fr) 180px;
+  align-items: start;
+}
+
+.event-card-body {
+  display: grid;
+  gap: 8px;
+}
+
+.event-card .poster-thumb {
+  width: 180px;
+  justify-self: end;
+}
+
 .poster-thumb {
   width: 100%;
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(15, 23, 42, 0.03);
 }
 
 .poster-thumb img {
   width: 100%;
   display: block;
-  object-fit: cover;
-  max-height: 160px;
+  object-fit: contain;
+  height: 220px;
+}
+
+.poster-thumb-empty {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  background: rgba(15, 23, 42, 0.03);
+  text-align: center;
 }
 
 .member-preview .preview-panel {
@@ -952,6 +1020,25 @@ textarea {
   .brand-logo {
     width: 200px;
     height: 64px;
+  }
+
+  .event-card {
+    grid-template-columns: 1fr;
+  }
+
+  .event-card .poster-thumb {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .event-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .event-grid {
+    grid-template-columns: 1fr;
   }
 }
 

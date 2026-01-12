@@ -260,7 +260,7 @@ export default function App() {
   const [eventUpcomingOnly, setEventUpcomingOnly] = useState(false);
   const [eventSortBy, setEventSortBy] = useState("start_at");
   const [eventSortDir, setEventSortDir] = useState("asc");
-  const [eventLimit, setEventLimit] = useState(12);
+  const [eventLimit, setEventLimit] = useState(50);
   const [eventOffset, setEventOffset] = useState(0);
   const [eventForm, setEventForm] = useState({
     title: "",
@@ -397,8 +397,23 @@ export default function App() {
           statusRaw: "Published",
           id: String(index),
         }));
+  const eventsAdminList =
+    eventsData && eventsData.length
+      ? eventsData
+          .filter((event) => isUuid(event.id))
+          .map((event) => ({
+            title: event.title,
+            date: formatDateRange(event.start_at, event.end_at),
+            location: resolveSiteName(event.site_id),
+            statusLabel: eventStatusLabelMap[event.status] || event.status,
+            statusRaw: event.status,
+            id: event.id,
+            posterUrl: resolvePosterUrl(event.poster_url),
+          }))
+      : [];
   const eventStartParts = splitDateTime(eventForm.startAt);
   const eventEndParts = splitDateTime(eventForm.endAt);
+  const eventTimePreview = formatEventTimePreview(eventForm.startAt, eventForm.endAt);
   const eventHourOptions = Array.from({ length: 24 }, (_, index) =>
     String(index).padStart(2, "0")
   );
@@ -767,6 +782,10 @@ export default function App() {
       setIsLoginOpen(true);
       return;
     }
+    if (!isUuid(eventId)) {
+      setViewMessage("活動清單尚未同步，請重新整理");
+      return;
+    }
     try {
       await apiPatch<EventItem>(`/events/${eventId}`, { status: "Published" }, token);
       apiGet<EventItem[]>(buildEventsPath())
@@ -781,6 +800,10 @@ export default function App() {
   const handleDeleteEvent = async (eventId: string) => {
     if (!token) {
       setIsLoginOpen(true);
+      return;
+    }
+    if (!isUuid(eventId)) {
+      setViewMessage("活動清單尚未同步，請重新整理");
       return;
     }
     if (!window.confirm("確定要刪除這個活動嗎？")) {
@@ -1125,6 +1148,44 @@ export default function App() {
     return `${startLabel} - ${endLabel}`;
   }
 
+  function formatEventTimePreview(startAt: string, endAt?: string | null) {
+    const start = new Date(startAt);
+    if (!Number.isFinite(start.getTime())) {
+      return "";
+    }
+    const startDate = start.toLocaleDateString("zh-TW", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const startTime = start.toLocaleTimeString("zh-TW", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    if (!endAt) {
+      return `${startDate} ${startTime}`;
+    }
+    const end = new Date(endAt);
+    if (!Number.isFinite(end.getTime())) {
+      return `${startDate} ${startTime}`;
+    }
+    const endDate = end.toLocaleDateString("zh-TW", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const endTime = end.toLocaleTimeString("zh-TW", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    if (endDate === startDate) {
+      return `${startDate} ${startTime} - ${endTime}`;
+    }
+    return `${startDate} ${startTime} - ${endDate} ${endTime}`;
+  }
+
   function publicEventStatusLabel(status: EventItem["status"]) {
     if (status === "Published") {
       return "已開放報名";
@@ -1158,6 +1219,12 @@ export default function App() {
     }
     const pad = (value: string) => value.padStart(2, "0");
     return `${date}T${pad(hour)}:${pad(minute)}`;
+  }
+
+  function isUuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value
+    );
   }
 
   function formatDateInput(value: string) {
@@ -2148,42 +2215,61 @@ export default function App() {
                   新增活動
                 </button>
               </div>
-              <div className="filter-bar">
-                <input
-                  placeholder="搜尋活動名稱"
-                  value={eventQuery}
-                  onChange={(event) => setEventQuery(event.target.value)}
-                />
-                <select value={eventStatus} onChange={(event) => setEventStatus(event.target.value)}>
-                  <option value="">全部狀態</option>
-                  <option value="Published">已發布</option>
-                  <option value="Draft">草稿</option>
-                  <option value="Closed">已結束</option>
-                </select>
-                <select value={eventSite} onChange={(event) => setEventSite(event.target.value)}>
-                  <option value="">全部分站</option>
-                  <option value="11111111-1111-1111-1111-111111111111">生命河中心</option>
-                  <option value="22222222-2222-2222-2222-222222222222">光復教會</option>
-                  <option value="33333333-3333-3333-3333-333333333333">第二教會</option>
-                  <option value="44444444-4444-4444-4444-444444444444">府中教會</option>
-                </select>
-                <select value={eventSortBy} onChange={(event) => setEventSortBy(event.target.value)}>
-                  <option value="start_at">依日期</option>
-                  <option value="created_at">依建立時間</option>
-                  <option value="title">依名稱</option>
-                </select>
-                <select value={eventSortDir} onChange={(event) => setEventSortDir(event.target.value)}>
-                  <option value="asc">升冪</option>
-                  <option value="desc">降冪</option>
-                </select>
-                <select
-                  value={eventLimit}
-                  onChange={(event) => setEventLimit(Number(event.target.value))}
-                >
-                  <option value={6}>每頁 6 筆</option>
-                  <option value={12}>每頁 12 筆</option>
-                  <option value={24}>每頁 24 筆</option>
-                </select>
+              <div className="event-filter-grid form-grid">
+                <label className="field">
+                  搜尋活動名稱
+                  <input
+                    placeholder="輸入關鍵字"
+                    value={eventQuery}
+                    onChange={(event) => setEventQuery(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  活動狀態
+                  <select value={eventStatus} onChange={(event) => setEventStatus(event.target.value)}>
+                    <option value="">全部狀態</option>
+                    <option value="Published">已發布</option>
+                    <option value="Draft">草稿</option>
+                    <option value="Closed">已結束</option>
+                  </select>
+                </label>
+                <label className="field">
+                  分站
+                  <select value={eventSite} onChange={(event) => setEventSite(event.target.value)}>
+                    <option value="">全部分站</option>
+                    <option value="11111111-1111-1111-1111-111111111111">生命河中心</option>
+                    <option value="22222222-2222-2222-2222-222222222222">光復教會</option>
+                    <option value="33333333-3333-3333-3333-333333333333">第二教會</option>
+                    <option value="44444444-4444-4444-4444-444444444444">府中教會</option>
+                  </select>
+                </label>
+                <label className="field">
+                  排序依據
+                  <select value={eventSortBy} onChange={(event) => setEventSortBy(event.target.value)}>
+                    <option value="start_at">依日期</option>
+                    <option value="created_at">依建立時間</option>
+                    <option value="title">依名稱</option>
+                  </select>
+                </label>
+                <label className="field">
+                  排序方向
+                  <select value={eventSortDir} onChange={(event) => setEventSortDir(event.target.value)}>
+                    <option value="asc">升冪</option>
+                    <option value="desc">降冪</option>
+                  </select>
+                </label>
+                <label className="field">
+                  每頁顯示
+                  <select
+                    value={eventLimit}
+                    onChange={(event) => setEventLimit(Number(event.target.value))}
+                  >
+                    <option value={6}>每頁 6 筆</option>
+                    <option value={12}>每頁 12 筆</option>
+                    <option value={24}>每頁 24 筆</option>
+                    <option value={50}>每頁 50 筆</option>
+                  </select>
+                </label>
               </div>
               {viewMessage && <p className="muted">{viewMessage}</p>}
               <div className="pager">
@@ -2201,40 +2287,50 @@ export default function App() {
                   下一頁
                 </button>
               </div>
-              <div className="user-grid">
-                {eventsList.map((event) => (
-                  <article key={event.id} className="user-card">
-                    {event.posterUrl && (
-                      <div className="poster-thumb">
-                        <img src={event.posterUrl} alt={`${event.title} 海報`} />
+              <div className="user-grid event-grid">
+                {eventsAdminList.map((event) => (
+                  <article key={event.id} className="user-card event-card">
+                    <div className="event-card-body">
+                      <div>
+                        <h3>{event.title}</h3>
+                        <p className="muted">{event.date}</p>
                       </div>
-                    )}
-                    <div>
-                      <h3>{event.title}</h3>
-                      <p className="muted">{event.date}</p>
+                      <p className="muted">狀態：{event.statusLabel}</p>
+                      <p className="muted">分站：{event.location}</p>
+                      <div className="button-row">
+                        {event.statusRaw === "Draft" && (
+                          <button
+                            className="button small"
+                            onClick={() => handlePublishEvent(event.id)}
+                          >
+                            發布
+                          </button>
+                        )}
+                        <button
+                          className="button ghost small"
+                          onClick={() => handleDeleteEvent(event.id)}
+                        >
+                          刪除
+                        </button>
+                        <button
+                          className="button outline small"
+                          onClick={() => handleOpenEventModal(event.id)}
+                        >
+                          編輯
+                        </button>
+                      </div>
                     </div>
-                    <p className="muted">狀態：{event.statusLabel}</p>
-                    <p className="muted">分站：{event.location}</p>
-                    {event.statusRaw !== "Published" && (
-                      <button
-                        className="button small"
-                        onClick={() => handlePublishEvent(event.id)}
-                      >
-                        發布
-                      </button>
-                    )}
-                    <button
-                      className="button ghost small"
-                      onClick={() => handleDeleteEvent(event.id)}
+                    <div
+                      className={`poster-thumb ${
+                        event.posterUrl ? "" : "poster-thumb-empty"
+                      }`}
                     >
-                      刪除
-                    </button>
-                    <button
-                      className="button outline small"
-                      onClick={() => handleOpenEventModal(event.id)}
-                    >
-                      編輯
-                    </button>
+                      {event.posterUrl ? (
+                        <img src={event.posterUrl} alt={`${event.title} 海報`} />
+                      ) : (
+                        <span className="muted">無海報</span>
+                      )}
+                    </div>
                   </article>
                 ))}
               </div>
@@ -2432,238 +2528,254 @@ export default function App() {
       {eventModalOpen && (
         <div className="modal">
           <div className="modal-backdrop" onClick={handleCloseEventModal} />
-          <div className="modal-panel modal-wide">
+          <div className="modal-panel modal-wide event-modal-panel">
             <div className="panel-header">
               <h3>{selectedEventId ? "編輯活動" : "新增活動"}</h3>
               <button className="button ghost small" onClick={handleCloseEventModal}>
                 關閉
               </button>
             </div>
-            <form className="form-grid" onSubmit={handleCreateEvent}>
-              <label className="field">
-                活動名稱
-                <input
-                  required
-                  value={eventForm.title}
-                  onChange={(event) =>
-                    setEventForm((prev) => ({ ...prev, title: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field">
-                分站
-                <select
-                  value={eventForm.siteId}
-                  onChange={(event) =>
-                    setEventForm((prev) => ({ ...prev, siteId: event.target.value }))
-                  }
-                >
-                  <option value="">未指定</option>
-                  <option value="11111111-1111-1111-1111-111111111111">生命河中心</option>
-                  <option value="22222222-2222-2222-2222-222222222222">光復教會</option>
-                  <option value="33333333-3333-3333-3333-333333333333">第二教會</option>
-                  <option value="44444444-4444-4444-4444-444444444444">府中教會</option>
-                </select>
-              </label>
-              <label className="field">
-                開始時間
-                <div className="time-row">
+            <div className="event-modal-layout">
+              <form className="form-grid" onSubmit={handleCreateEvent}>
+                <label className="field">
+                  活動名稱
                   <input
-                    type="date"
                     required
-                    value={eventStartParts.date}
-                    onChange={(event) => {
-                      const nextDate = event.target.value;
-                      const nextHour = eventStartParts.hour || "00";
-                      const nextMinute = eventStartParts.minute || "00";
-                      setEventForm((prev) => ({
-                        ...prev,
-                        startAt: nextDate ? buildDateTime(nextDate, nextHour, nextMinute) : "",
-                      }));
-                    }}
+                    value={eventForm.title}
+                    onChange={(event) =>
+                      setEventForm((prev) => ({ ...prev, title: event.target.value }))
+                    }
                   />
+                </label>
+                <label className="field">
+                  分站
                   <select
-                    value={eventStartParts.hour}
-                    onChange={(event) => {
-                      const nextHour = event.target.value;
-                      const nextMinute = eventStartParts.minute || "00";
-                      if (!eventStartParts.date) {
-                        return;
-                      }
-                      setEventForm((prev) => ({
-                        ...prev,
-                        startAt: buildDateTime(eventStartParts.date, nextHour, nextMinute),
-                      }));
-                    }}
-                    disabled={!eventStartParts.date}
+                    value={eventForm.siteId}
+                    onChange={(event) =>
+                      setEventForm((prev) => ({ ...prev, siteId: event.target.value }))
+                    }
                   >
-                    <option value="">時</option>
-                    {eventHourOptions.map((hour) => (
-                      <option key={hour} value={hour}>
-                        {hour}
-                      </option>
-                    ))}
+                    <option value="">未指定</option>
+                    <option value="11111111-1111-1111-1111-111111111111">生命河中心</option>
+                    <option value="22222222-2222-2222-2222-222222222222">光復教會</option>
+                    <option value="33333333-3333-3333-3333-333333333333">第二教會</option>
+                    <option value="44444444-4444-4444-4444-444444444444">府中教會</option>
                   </select>
-                  <select
-                    value={eventStartParts.minute}
-                    onChange={(event) => {
-                      const nextMinute = event.target.value;
-                      const nextHour = eventStartParts.hour || "00";
-                      if (!eventStartParts.date) {
-                        return;
-                      }
-                      setEventForm((prev) => ({
-                        ...prev,
-                        startAt: buildDateTime(eventStartParts.date, nextHour, nextMinute),
-                      }));
-                    }}
-                    disabled={!eventStartParts.date}
-                  >
-                    <option value="">分</option>
-                    {eventMinuteOptions.map((minute) => (
-                      <option key={minute} value={minute}>
-                        {minute}
-                      </option>
-                    ))}
-                  </select>
+                </label>
+                <label className="field">
+                  開始時間
+                  <div className="time-row">
+                    <input
+                      type="date"
+                      required
+                      value={eventStartParts.date}
+                      onChange={(event) => {
+                        const nextDate = event.target.value;
+                        const nextHour = eventStartParts.hour || "00";
+                        const nextMinute = eventStartParts.minute || "00";
+                        setEventForm((prev) => ({
+                          ...prev,
+                          startAt: nextDate ? buildDateTime(nextDate, nextHour, nextMinute) : "",
+                        }));
+                      }}
+                    />
+                    <select
+                      value={eventStartParts.hour}
+                      onChange={(event) => {
+                        const nextHour = event.target.value;
+                        const nextMinute = eventStartParts.minute || "00";
+                        if (!eventStartParts.date) {
+                          return;
+                        }
+                        setEventForm((prev) => ({
+                          ...prev,
+                          startAt: buildDateTime(eventStartParts.date, nextHour, nextMinute),
+                        }));
+                      }}
+                      disabled={!eventStartParts.date}
+                    >
+                      <option value="">時</option>
+                      {eventHourOptions.map((hour) => (
+                        <option key={hour} value={hour}>
+                          {hour}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={eventStartParts.minute}
+                      onChange={(event) => {
+                        const nextMinute = event.target.value;
+                        const nextHour = eventStartParts.hour || "00";
+                        if (!eventStartParts.date) {
+                          return;
+                        }
+                        setEventForm((prev) => ({
+                          ...prev,
+                          startAt: buildDateTime(eventStartParts.date, nextHour, nextMinute),
+                        }));
+                      }}
+                      disabled={!eventStartParts.date}
+                    >
+                      <option value="">分</option>
+                      {eventMinuteOptions.map((minute) => (
+                        <option key={minute} value={minute}>
+                          {minute}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </label>
+                <label className="field">
+                  結束時間（選填）
+                  <div className="time-row">
+                    <input
+                      type="date"
+                      value={eventEndParts.date}
+                      onChange={(event) => {
+                        const nextDate = event.target.value;
+                        if (!nextDate) {
+                          setEventForm((prev) => ({ ...prev, endAt: "" }));
+                          return;
+                        }
+                        const nextHour = eventEndParts.hour || "00";
+                        const nextMinute = eventEndParts.minute || "00";
+                        setEventForm((prev) => ({
+                          ...prev,
+                          endAt: buildDateTime(nextDate, nextHour, nextMinute),
+                        }));
+                      }}
+                    />
+                    <select
+                      value={eventEndParts.hour}
+                      onChange={(event) => {
+                        const nextHour = event.target.value;
+                        const nextMinute = eventEndParts.minute || "00";
+                        if (!eventEndParts.date) {
+                          return;
+                        }
+                        setEventForm((prev) => ({
+                          ...prev,
+                          endAt: buildDateTime(eventEndParts.date, nextHour, nextMinute),
+                        }));
+                      }}
+                      disabled={!eventEndParts.date}
+                    >
+                      <option value="">時</option>
+                      {eventHourOptions.map((hour) => (
+                        <option key={hour} value={hour}>
+                          {hour}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={eventEndParts.minute}
+                      onChange={(event) => {
+                        const nextMinute = event.target.value;
+                        const nextHour = eventEndParts.hour || "00";
+                        if (!eventEndParts.date) {
+                          return;
+                        }
+                        setEventForm((prev) => ({
+                          ...prev,
+                          endAt: buildDateTime(eventEndParts.date, nextHour, nextMinute),
+                        }));
+                      }}
+                      disabled={!eventEndParts.date}
+                    >
+                      <option value="">分</option>
+                      {eventMinuteOptions.map((minute) => (
+                        <option key={minute} value={minute}>
+                          {minute}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </label>
+                <div className="field field-full">
+                  <span className="muted time-preview">
+                    時間顯示：{eventTimePreview || "請選擇開始時間"}
+                  </span>
                 </div>
-              </label>
-              <label className="field">
-                結束時間（選填）
-                <div className="time-row">
+                <label className="field">
+                  名額
                   <input
-                    type="date"
-                    value={eventEndParts.date}
-                    onChange={(event) => {
-                      const nextDate = event.target.value;
-                      if (!nextDate) {
-                        setEventForm((prev) => ({ ...prev, endAt: "" }));
-                        return;
-                      }
-                      const nextHour = eventEndParts.hour || "00";
-                      const nextMinute = eventEndParts.minute || "00";
+                    type="number"
+                    min="1"
+                    value={eventForm.capacity}
+                    onChange={(event) =>
+                      setEventForm((prev) => ({ ...prev, capacity: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={eventForm.waitlistEnabled}
+                    onChange={(event) =>
+                      setEventForm((prev) => ({ ...prev, waitlistEnabled: event.target.checked }))
+                    }
+                  />
+                  候補開放
+                </label>
+                <label className="field">
+                  活動狀態
+                  <select
+                    value={eventForm.status}
+                    onChange={(event) =>
                       setEventForm((prev) => ({
                         ...prev,
-                        endAt: buildDateTime(nextDate, nextHour, nextMinute),
-                      }));
+                        status: event.target.value as EventItem["status"],
+                      }))
+                    }
+                  >
+                    <option value="Draft">草稿</option>
+                    <option value="Published">已發布</option>
+                    <option value="Closed">已結束</option>
+                  </select>
+                </label>
+                <label className="field field-full">
+                  說明
+                  <textarea
+                    rows={6}
+                    className="textarea-large"
+                    value={eventForm.description}
+                    onChange={(event) =>
+                      setEventForm((prev) => ({ ...prev, description: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field field-full">
+                  宣傳海報
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      setEventPosterFile(file);
+                      setEventPosterPreview(file ? URL.createObjectURL(file) : null);
                     }}
                   />
-                  <select
-                    value={eventEndParts.hour}
-                    onChange={(event) => {
-                      const nextHour = event.target.value;
-                      const nextMinute = eventEndParts.minute || "00";
-                      if (!eventEndParts.date) {
-                        return;
-                      }
-                      setEventForm((prev) => ({
-                        ...prev,
-                        endAt: buildDateTime(eventEndParts.date, nextHour, nextMinute),
-                      }));
-                    }}
-                    disabled={!eventEndParts.date}
-                  >
-                    <option value="">時</option>
-                    {eventHourOptions.map((hour) => (
-                      <option key={hour} value={hour}>
-                        {hour}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={eventEndParts.minute}
-                    onChange={(event) => {
-                      const nextMinute = event.target.value;
-                      const nextHour = eventEndParts.hour || "00";
-                      if (!eventEndParts.date) {
-                        return;
-                      }
-                      setEventForm((prev) => ({
-                        ...prev,
-                        endAt: buildDateTime(eventEndParts.date, nextHour, nextMinute),
-                      }));
-                    }}
-                    disabled={!eventEndParts.date}
-                  >
-                    <option value="">分</option>
-                    {eventMinuteOptions.map((minute) => (
-                      <option key={minute} value={minute}>
-                        {minute}
-                      </option>
-                    ))}
-                  </select>
+                </label>
+                <div className="field field-full">
+                  <button className="button primary" type="submit">
+                    {selectedEventId ? "更新活動" : "建立活動"}
+                  </button>
                 </div>
-              </label>
-              <label className="field">
-                名額
-                <input
-                  type="number"
-                  min="1"
-                  value={eventForm.capacity}
-                  onChange={(event) =>
-                    setEventForm((prev) => ({ ...prev, capacity: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={eventForm.waitlistEnabled}
-                  onChange={(event) =>
-                    setEventForm((prev) => ({ ...prev, waitlistEnabled: event.target.checked }))
-                  }
-                />
-                候補開放
-              </label>
-              <label className="field">
-                活動狀態
-                <select
-                  value={eventForm.status}
-                  onChange={(event) =>
-                    setEventForm((prev) => ({
-                      ...prev,
-                      status: event.target.value as EventItem["status"],
-                    }))
-                  }
+              </form>
+              <aside className="event-modal-right">
+                <div
+                  className={`poster-preview ${
+                    eventPosterPreview ? "" : "poster-preview-empty"
+                  }`}
                 >
-                  <option value="Draft">草稿</option>
-                  <option value="Published">已發布</option>
-                  <option value="Closed">已結束</option>
-                </select>
-              </label>
-              <label className="field field-full">
-                說明
-                <textarea
-                  rows={3}
-                  value={eventForm.description}
-                  onChange={(event) =>
-                    setEventForm((prev) => ({ ...prev, description: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field field-full">
-                宣傳海報
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] || null;
-                    setEventPosterFile(file);
-                    setEventPosterPreview(file ? URL.createObjectURL(file) : null);
-                  }}
-                />
-              </label>
-              {eventPosterPreview && (
-                <div className="poster-preview">
-                  <img src={eventPosterPreview} alt="活動海報預覽" />
+                  {eventPosterPreview ? (
+                    <img src={eventPosterPreview} alt="活動海報預覽" />
+                  ) : (
+                    <p className="muted">海報預覽會顯示在這裡</p>
+                  )}
                 </div>
-              )}
-              <div className="field field-full">
-                <button className="button primary" type="submit">
-                  {selectedEventId ? "更新活動" : "建立活動"}
-                </button>
-              </div>
-            </form>
+              </aside>
+            </div>
           </div>
         </div>
       )}

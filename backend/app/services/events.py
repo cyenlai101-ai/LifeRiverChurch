@@ -20,13 +20,14 @@ def list_events(
     limit: int = 50,
     offset: int = 0,
 ) -> list[Event]:
+    search_query = query
     query = db.query(Event)
     if site_id:
         query = query.filter(Event.site_id == site_id)
     if status:
         query = query.filter(Event.status == status)
-    if query:
-        like_value = f"%{query}%"
+    if search_query:
+        like_value = f"%{search_query}%"
         query = query.filter(or_(Event.title.ilike(like_value), Event.description.ilike(like_value)))
     if upcoming_only:
         query = query.filter(Event.start_at >= func.now())

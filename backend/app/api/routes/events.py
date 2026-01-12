@@ -1,4 +1,5 @@
 from typing import Optional
+import uuid
 
 import uuid
 from pathlib import Path
@@ -107,6 +108,10 @@ def delete_event_handler(
     db: Session = Depends(get_db),
 ) -> None:
     _ = current_user
+    try:
+        uuid.UUID(event_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid event id")
     if not delete_event(db, event_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     return None

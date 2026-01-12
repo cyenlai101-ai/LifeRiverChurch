@@ -11,7 +11,7 @@ from app.core.config import settings
 
 app = FastAPI(title="Liferiverchurch API", version="0.1.0")
 
-STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
+STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
