@@ -36,6 +36,15 @@ type DashboardSummary = {
   recent_activity: string[];
 };
 
+type WeeklyVerse = {
+  id: string;
+  site_id: string;
+  week_start: string;
+  text: string;
+  reference: string;
+  updated_at: string;
+};
+
 type UserProfile = {
   id: string;
   email: string;
@@ -43,6 +52,7 @@ type UserProfile = {
   role: "Admin" | "CenterStaff" | "BranchStaff" | "Leader" | "Member";
   phone?: string | null;
   member_type?: "Member" | "Seeker";
+  site_id?: string | null;
 };
 
 type EventItem = {
@@ -87,6 +97,14 @@ type AdminUserItem = {
 
 const sites: SiteTheme[] = [
   {
+    id: "all",
+    name: "全站",
+    accent: "#1f2937",
+    accentSoft: "#e5e7eb",
+    accentDeep: "#0f172a",
+    tagline: "跨站點最新消息與活動，一次掌握。",
+  },
+  {
     id: "center",
     name: "生命河中心",
     accent: "#1f4ed8",
@@ -127,26 +145,12 @@ const siteIdMap: Record<string, string> = {
   "44444444-4444-4444-4444-444444444444": "府中教會",
 };
 
-const events = [
-  {
-    title: "城市復興特會",
-    date: "10/05 週六 19:00",
-    location: "中心會堂",
-    tag: "早鳥",
-  },
-  {
-    title: "家庭關係工作坊",
-    date: "10/12 週六 14:00",
-    location: "光復教會",
-    tag: "名額 120",
-  },
-  {
-    title: "青年敬拜之夜",
-    date: "10/19 週六 20:00",
-    location: "府中教會",
-    tag: "免費入場",
-  },
-];
+const siteUuidByCode: Record<string, string> = {
+  center: "11111111-1111-1111-1111-111111111111",
+  guangfu: "22222222-2222-2222-2222-222222222222",
+  second: "33333333-3333-3333-3333-333333333333",
+  fuzhong: "44444444-4444-4444-4444-444444444444",
+};
 
 const news = [
   {
@@ -191,27 +195,6 @@ const recentActivities = [
   "09/28 奉獻收據已寄送至 Email",
 ];
 
-const upcomingEvents = [
-  {
-    title: "城市復興特會",
-    date: "10/05 週六 19:00",
-    location: "中心會堂",
-    status: "已開放報名",
-  },
-  {
-    title: "家庭關係工作坊",
-    date: "10/12 週六 14:00",
-    location: "光復教會",
-    status: "早鳥優惠",
-  },
-  {
-    title: "青年敬拜之夜",
-    date: "10/19 週六 20:00",
-    location: "府中教會",
-    status: "名額 120",
-  },
-];
-
 const prayerWall = [
   {
     title: "為家庭關係禱告",
@@ -237,7 +220,7 @@ const careSubjects = [
 ];
 
 export default function App() {
-  const [activeSiteId, setActiveSiteId] = useState("center");
+  const [activeSiteId, setActiveSiteId] = useState("all");
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [loginEmail, setLoginEmail] = useState("");
@@ -253,6 +236,16 @@ export default function App() {
   const [eventsData, setEventsData] = useState<EventItem[] | null>(null);
   const [prayersData, setPrayersData] = useState<PrayerItem[] | null>(null);
   const [careData, setCareData] = useState<CareSubjectItem[] | null>(null);
+  const [weeklyVerse, setWeeklyVerse] = useState<WeeklyVerse | null>(null);
+  const [weeklyVerseList, setWeeklyVerseList] = useState<WeeklyVerse[]>([]);
+  const [weeklyVerseEditingId, setWeeklyVerseEditingId] = useState<string | null>(null);
+  const [weeklyVerseForm, setWeeklyVerseForm] = useState({
+    siteId: siteUuidByCode.center,
+    weekStart: "",
+    text: "",
+    reference: "",
+  });
+  const [weeklyVerseMessage, setWeeklyVerseMessage] = useState("");
   const [viewMessage, setViewMessage] = useState("");
   const [eventQuery, setEventQuery] = useState("");
   const [eventStatus, setEventStatus] = useState("");
@@ -330,6 +323,7 @@ export default function App() {
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [eventPosterFile, setEventPosterFile] = useState<File | null>(null);
   const [eventPosterPreview, setEventPosterPreview] = useState<string | null>(null);
+  const [homeEvents, setHomeEvents] = useState<EventItem[] | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({
     fullName: "",
@@ -342,6 +336,7 @@ export default function App() {
     currentPassword: "",
     newPassword: "",
   });
+  const [mobilePreview, setMobilePreview] = useState(false);
   const [activeView, setActiveView] = useState<
     "home" | "member" | "events" | "prayers" | "care" | "admin"
   >("home");
@@ -380,23 +375,35 @@ export default function App() {
     Published: "已發布",
     Closed: "已結束",
   };
+  const weekEventItems =
+    homeEvents && homeEvents.length
+      ? homeEvents
+          .filter((event) => event.status !== "Draft")
+          .map((event) => ({
+            id: event.id,
+            title: event.title,
+            date: formatDateRange(event.start_at, event.end_at),
+            location: resolveSiteName(event.site_id),
+            description: event.description || "",
+            capacity: event.capacity,
+            status: eventStatusLabelMap[event.status] || event.status,
+            posterUrl: resolvePosterUrl(event.poster_url),
+          }))
+      : [];
   const eventsList =
     eventsData && eventsData.length
       ? eventsData.map((event) => ({
+          id: event.id,
           title: event.title,
           date: formatDateRange(event.start_at, event.end_at),
           location: resolveSiteName(event.site_id),
-          statusLabel: eventStatusLabelMap[event.status] || event.status,
+          description: event.description || "",
+          capacity: event.capacity,
+          status: eventStatusLabelMap[event.status] || event.status,
           statusRaw: event.status,
-          id: event.id,
           posterUrl: resolvePosterUrl(event.poster_url),
         }))
-      : upcomingEvents.map((event, index) => ({
-          ...event,
-          statusLabel: event.status,
-          statusRaw: "Published",
-          id: String(index),
-        }));
+      : [];
   const eventsAdminList =
     eventsData && eventsData.length
       ? eventsData
@@ -449,6 +456,12 @@ export default function App() {
     "Leader",
   ]);
   const isStaff = currentUser ? staffRoles.has(currentUser.role) : false;
+  const weeklyVerseSiteId = currentUser?.site_id || weeklyVerseForm.siteId;
+  const weeklyVerseSiteLocked = true;
+  const homeVerse = weeklyVerse ?? {
+    text: "凡勞苦擔重擔的人，可以到我這裡來。",
+    reference: "馬太福音 11:28",
+  };
   const roleLabelMap: Record<UserProfile["role"], string> = {
     Admin: "系統管理",
     CenterStaff: "中心同工",
@@ -515,7 +528,20 @@ export default function App() {
       phone: currentUser.phone || "",
       memberType: currentUser.member_type || "Member",
     });
+    if (
+      currentUser.site_id &&
+      weeklyVerseForm.siteId === siteUuidByCode.center &&
+      currentUser.site_id !== siteUuidByCode.center
+    ) {
+      setWeeklyVerseForm((prev) => ({ ...prev, siteId: currentUser.site_id }));
+    }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!weeklyVerseForm.weekStart) {
+      setWeeklyVerseForm((prev) => ({ ...prev, weekStart: getCurrentSundayDate() }));
+    }
+  }, [weeklyVerseForm.weekStart]);
 
   useEffect(() => {
     if (activeView !== "events") {
@@ -540,6 +566,51 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    if (activeView !== "home") {
+      return;
+    }
+    const siteId = siteUuidByCode[activeSiteId];
+    const params = new URLSearchParams({
+      limit: "4",
+      sort_by: "start_at",
+      sort_dir: "desc",
+    });
+    if (siteId) {
+      params.set("site_id", siteId);
+    }
+    apiGet<EventItem[]>(`/events?${params.toString()}`)
+      .then((data) => setHomeEvents(data))
+      .catch(() => setHomeEvents([]));
+  }, [activeView, activeSiteId]);
+
+  useEffect(() => {
+    if (activeView !== "home") {
+      return;
+    }
+    const siteId = siteUuidByCode[activeSiteId];
+    if (!siteId) {
+      setWeeklyVerse(null);
+      return;
+    }
+    apiGet<WeeklyVerse>(`/weekly-verse/current?site_id=${siteId}`)
+      .then((data) => setWeeklyVerse(data))
+      .catch(() => setWeeklyVerse(null));
+  }, [activeView, activeSiteId]);
+
+  useEffect(() => {
+    if (!weeklyVerse) {
+      return;
+    }
+    setWeeklyVerseForm((prev) => ({
+      ...prev,
+      siteId: weeklyVerse.site_id,
+      weekStart: weeklyVerse.week_start,
+      text: weeklyVerse.text,
+      reference: weeklyVerse.reference,
+    }));
+  }, [weeklyVerse]);
+
+  useEffect(() => {
     if (activeView !== "admin" || adminTab !== "events") {
       return;
     }
@@ -561,6 +632,24 @@ export default function App() {
     eventLimit,
     eventOffset,
   ]);
+
+  useEffect(() => {
+    if (activeView !== "admin") {
+      return;
+    }
+    const siteId = weeklyVerseSiteId;
+    if (!siteId) {
+      setWeeklyVerse(null);
+      return;
+    }
+    apiGet<WeeklyVerse[]>(`/weekly-verse?site_id=${siteId}`)
+      .then((data) => setWeeklyVerseList(data))
+      .catch(() => setWeeklyVerseList([]));
+  }, [activeView, weeklyVerseSiteId]);
+
+  useEffect(() => {
+    setWeeklyVerseMessage("");
+  }, [weeklyVerseForm.siteId]);
 
   useEffect(() => {
     if (activeView !== "prayers") {
@@ -727,6 +816,83 @@ export default function App() {
     setAdminUsers(null);
     setAdminPrayers(null);
     setSelectedUser(null);
+  };
+
+  const handleUpdateWeeklyVerse = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!token) {
+      setIsLoginOpen(true);
+      return;
+    }
+    setWeeklyVerseMessage("");
+    try {
+      if (weeklyVerseEditingId) {
+        await apiPatch<WeeklyVerse>(
+          `/weekly-verse/${weeklyVerseEditingId}`,
+          {
+            week_start: weeklyVerseForm.weekStart,
+            text: weeklyVerseForm.text,
+            reference: weeklyVerseForm.reference,
+          },
+          token
+        );
+        setWeeklyVerseMessage("金句已更新");
+      } else {
+        await apiPost<WeeklyVerse>(
+          "/weekly-verse",
+          {
+            site_id: weeklyVerseSiteId,
+            week_start: weeklyVerseForm.weekStart,
+            text: weeklyVerseForm.text,
+            reference: weeklyVerseForm.reference,
+          },
+          token
+        );
+        setWeeklyVerseMessage("金句已新增");
+      }
+      const data = await apiGet<WeeklyVerse[]>(`/weekly-verse?site_id=${weeklyVerseSiteId}`);
+      setWeeklyVerseList(data);
+      setWeeklyVerseEditingId(null);
+    } catch (error: any) {
+      setWeeklyVerseMessage(error?.message || "更新本週金句失敗");
+    }
+  };
+
+  const handleEditWeeklyVerse = (item: WeeklyVerse) => {
+    setWeeklyVerseEditingId(item.id);
+    setWeeklyVerseForm({
+      siteId: item.site_id,
+      weekStart: item.week_start,
+      text: item.text,
+      reference: item.reference,
+    });
+  };
+
+  const handleDeleteWeeklyVerse = async (verseId: string) => {
+    if (!token) {
+      setIsLoginOpen(true);
+      return;
+    }
+    if (!window.confirm("確定要刪除這則金句嗎？")) {
+      return;
+    }
+    try {
+      await apiDelete(`/weekly-verse/${verseId}`, token);
+      const data = await apiGet<WeeklyVerse[]>(`/weekly-verse?site_id=${weeklyVerseSiteId}`);
+      setWeeklyVerseList(data);
+      setWeeklyVerseMessage("金句已刪除");
+      if (weeklyVerseEditingId === verseId) {
+        setWeeklyVerseEditingId(null);
+        setWeeklyVerseForm((prev) => ({
+          ...prev,
+          weekStart: getCurrentSundayDate(),
+          text: "",
+          reference: "",
+        }));
+      }
+    } catch (error: any) {
+      setWeeklyVerseMessage(error?.message || "刪除金句失敗");
+    }
   };
 
   const handleCreateEvent = async (event: React.FormEvent) => {
@@ -1148,6 +1314,31 @@ export default function App() {
     return `${startLabel} - ${endLabel}`;
   }
 
+  function formatWeekStartDate(value?: string | null) {
+    if (!value) {
+      return "";
+    }
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleDateString("zh-TW", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  }
+
+  function getCurrentSundayDate() {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = day === 0 ? 0 : day;
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - diff);
+    const pad = (num: number) => String(num).padStart(2, "0");
+    return `${sunday.getFullYear()}-${pad(sunday.getMonth() + 1)}-${pad(sunday.getDate())}`;
+  }
+
   function formatEventTimePreview(startAt: string, endAt?: string | null) {
     const start = new Date(startAt);
     if (!Number.isFinite(start.getTime())) {
@@ -1333,20 +1524,21 @@ export default function App() {
   );
 
   return (
-    <div className="page" style={themeStyle}>
-      <div className="ambient">
-        <span className="orb orb-one" />
-        <span className="orb orb-two" />
-        <span className="orb orb-three" />
-      </div>
-
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-logo-wrap">
-            <img className="brand-logo" src="/logo-生命河.jpg" alt="生命河教會 Logo" />
-          </div>
+    <div className={`page ${mobilePreview ? "mobile-preview" : ""}`} style={themeStyle}>
+      <div className="page-inner">
+        <div className="ambient">
+          <span className="orb orb-one" />
+          <span className="orb orb-two" />
+          <span className="orb orb-three" />
         </div>
-        <nav className="nav">
+
+        <header className="topbar">
+          <div className="brand">
+            <div className="brand-logo-wrap">
+              <img className="brand-logo" src="/logo-生命河.jpg" alt="生命河教會 Logo" />
+            </div>
+          </div>
+          <nav className="nav">
           <button
             className={`nav-link ${activeView === "home" ? "active" : ""}`}
             onClick={() => setActiveView("home")}
@@ -1392,33 +1584,41 @@ export default function App() {
           >
             會員中心
           </button>
-        </nav>
-        {token ? (
-          <div className="user-bar">
-            <div className="user-chip">
-              <p className="user-name">
-                {currentUser?.full_name || currentUser?.email || loginEmail || "已登入"}
-              </p>
-              <p className="user-role">
-                {currentUser ? roleLabelMap[currentUser.role] : "會員"}
-              </p>
-            </div>
-            <button className="button ghost" onClick={handleLogout}>
-              登出
+          </nav>
+          <div className="topbar-actions">
+            <button
+              className="button outline small"
+              onClick={() => setMobilePreview((prev) => !prev)}
+            >
+              {mobilePreview ? "退出手機預覽" : "手機預覽"}
             </button>
+            {token ? (
+              <div className="user-bar">
+                <div className="user-chip">
+                  <p className="user-name">
+                    {currentUser?.full_name || currentUser?.email || loginEmail || "已登入"}
+                  </p>
+                  <p className="user-role">
+                    {currentUser ? roleLabelMap[currentUser.role] : "會員"}
+                  </p>
+                </div>
+                <button className="button ghost" onClick={handleLogout}>
+                  登出
+                </button>
+              </div>
+            ) : (
+              <button
+                className="button ghost"
+                onClick={() => {
+                  setAuthMode("login");
+                  setIsLoginOpen(true);
+                }}
+              >
+                登入/註冊
+              </button>
+            )}
           </div>
-        ) : (
-          <button
-            className="button ghost"
-            onClick={() => {
-              setAuthMode("login");
-              setIsLoginOpen(true);
-            }}
-          >
-            登入/註冊
-          </button>
-        )}
-      </header>
+        </header>
 
       {isLoginOpen && (
         <div className="modal">
@@ -1561,28 +1761,70 @@ export default function App() {
             </div>
           </section>
 
-          <section className="section">
+          <section className="section verse-section">
+            <div className="panel verse-panel">
+              <div>
+                <p className="eyebrow">本週金句</p>
+                <p className="muted">分站：{activeSite.name}</p>
+                {weeklyVerse?.week_start && (
+                  <p className="muted">週日日期：{formatWeekStartDate(weeklyVerse.week_start)}</p>
+                )}
+                <h2>「{homeVerse.text}」</h2>
+                <p className="muted">{homeVerse.reference}</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="section week-events">
             <div className="section-header">
               <div>
-                <p className="eyebrow">本週活動</p>
+                <p className="eyebrow">近期活動</p>
                 <h2>立即投入，找到你的下一場相遇</h2>
               </div>
-              <button className="button outline small">查看全部</button>
+              <button
+                className="button outline small"
+                onClick={() => setActiveView("events")}
+              >
+                查看全部
+              </button>
             </div>
-            <div className="card-grid">
-              {events.map((event, index) => (
-                <article
-                  key={event.title}
-                  className="info-card"
-                  style={{ "--delay": `${index * 0.1}s` } as React.CSSProperties}
-                >
-                  <p className="tag">{event.tag}</p>
-                  <h3>{event.title}</h3>
-                  <p className="muted">{event.date}</p>
-                  <p className="muted">{event.location}</p>
-                  <button className="text-link">快速報名 →</button>
-                </article>
-              ))}
+            <div className="week-grid">
+              {weekEventItems.length ? (
+                weekEventItems.map((event, index) => (
+                  <article
+                    key={event.id}
+                    className="week-card"
+                    style={{ "--delay": `${index * 0.08}s` } as React.CSSProperties}
+                  >
+                    <div className="week-card-body">
+                      <div className="week-card-header">
+                        <div>
+                          <span className="pill">{event.status}</span>
+                          <h3>{event.title}</h3>
+                        </div>
+                        <button className="text-link">快速報名 →</button>
+                      </div>
+                      <div className="week-meta">
+                        <span>分站：{event.location}</span>
+                        <span>時間：{event.date}</span>
+                        {event.description && <span>說明：{event.description}</span>}
+                        <span>名額：{event.capacity ?? "不限"}</span>
+                      </div>
+                    </div>
+                    <div className="week-card-media">
+                      {event.posterUrl ? (
+                        <img src={event.posterUrl} alt={`${event.title} 海報`} />
+                      ) : (
+                        <div className="week-card-placeholder">
+                          <span>無海報</span>
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="week-empty muted">目前尚無已發布的近期活動。</div>
+              )}
             </div>
           </section>
 
@@ -1699,71 +1941,53 @@ export default function App() {
               <p className="eyebrow">活動報名</p>
               <h2>近期活動與開放報名</h2>
             </div>
-            <button className="button outline small">管理活動</button>
           </div>
-          {isStaff ? (
-            <div className="panel form-panel">
-              <div className="panel-header">
-                <h3>活動管理</h3>
-                <button className="button primary" onClick={() => handleOpenEventModal()}>
-                  新增活動
-                </button>
-              </div>
-              <p className="muted">活動建立與編輯改為彈窗操作。</p>
-            </div>
-          ) : (
-            <div className="panel access-panel">
-              <h3>此區僅限同工建立活動</h3>
-              <p className="muted">請使用同工帳號登入後管理活動。</p>
-              <button className="button primary" onClick={() => setIsLoginOpen(true)}>
-                重新登入
-              </button>
-            </div>
-          )}
-          <div className="filter-bar">
-            <input
-              placeholder="搜尋活動名稱"
-              value={eventQuery}
-              onChange={(event) => setEventQuery(event.target.value)}
-            />
-            <select value={eventStatus} onChange={(event) => setEventStatus(event.target.value)}>
-              <option value="">全部狀態</option>
-              <option value="Published">已開放</option>
-              <option value="Draft">草稿</option>
-              <option value="Closed">已結束</option>
-            </select>
-            <select value={eventSite} onChange={(event) => setEventSite(event.target.value)}>
-              <option value="">全部分站</option>
-              <option value="11111111-1111-1111-1111-111111111111">生命河中心</option>
-              <option value="22222222-2222-2222-2222-222222222222">光復教會</option>
-              <option value="33333333-3333-3333-3333-333333333333">第二教會</option>
-              <option value="44444444-4444-4444-4444-444444444444">府中教會</option>
-            </select>
-            <label className="checkbox">
+          <div className="panel events-filters">
+            <div className="filter-bar">
               <input
-                type="checkbox"
-                checked={eventUpcomingOnly}
-                onChange={(event) => setEventUpcomingOnly(event.target.checked)}
+                placeholder="搜尋活動名稱"
+                value={eventQuery}
+                onChange={(event) => setEventQuery(event.target.value)}
               />
-              只看未來活動
-            </label>
-            <select value={eventSortBy} onChange={(event) => setEventSortBy(event.target.value)}>
-              <option value="start_at">依日期</option>
-              <option value="created_at">依建立時間</option>
-              <option value="title">依名稱</option>
-            </select>
-            <select value={eventSortDir} onChange={(event) => setEventSortDir(event.target.value)}>
-              <option value="asc">升冪</option>
-              <option value="desc">降冪</option>
-            </select>
-            <select
-              value={eventLimit}
-              onChange={(event) => setEventLimit(Number(event.target.value))}
-            >
-              <option value={6}>每頁 6 筆</option>
-              <option value={12}>每頁 12 筆</option>
-              <option value={24}>每頁 24 筆</option>
-            </select>
+              <select value={eventStatus} onChange={(event) => setEventStatus(event.target.value)}>
+                <option value="">全部狀態</option>
+                <option value="Published">已開放</option>
+                <option value="Draft">草稿</option>
+                <option value="Closed">已結束</option>
+              </select>
+              <select value={eventSite} onChange={(event) => setEventSite(event.target.value)}>
+                <option value="">全部分站</option>
+                <option value="11111111-1111-1111-1111-111111111111">生命河中心</option>
+                <option value="22222222-2222-2222-2222-222222222222">光復教會</option>
+                <option value="33333333-3333-3333-3333-333333333333">第二教會</option>
+                <option value="44444444-4444-4444-4444-444444444444">府中教會</option>
+              </select>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={eventUpcomingOnly}
+                  onChange={(event) => setEventUpcomingOnly(event.target.checked)}
+                />
+                只看未來活動
+              </label>
+              <select value={eventSortBy} onChange={(event) => setEventSortBy(event.target.value)}>
+                <option value="start_at">依日期</option>
+                <option value="created_at">依建立時間</option>
+                <option value="title">依名稱</option>
+              </select>
+              <select value={eventSortDir} onChange={(event) => setEventSortDir(event.target.value)}>
+                <option value="asc">升冪</option>
+                <option value="desc">降冪</option>
+              </select>
+              <select
+                value={eventLimit}
+                onChange={(event) => setEventLimit(Number(event.target.value))}
+              >
+                <option value={6}>每頁 6 筆</option>
+                <option value={12}>每頁 12 筆</option>
+                <option value={24}>每頁 24 筆</option>
+              </select>
+            </div>
           </div>
           {viewMessage && <p className="muted">{viewMessage}</p>}
           <div className="pager">
@@ -1781,16 +2005,41 @@ export default function App() {
               下一頁
             </button>
           </div>
-          <div className="card-grid">
-            {eventsList.map((event) => (
-              <article key={event.id} className="info-card">
-                <p className="tag">{publicEventStatusLabel(event.statusRaw)}</p>
-                <h3>{event.title}</h3>
-                <p className="muted">{event.date}</p>
-                <p className="muted">{event.location}</p>
-                <button className="text-link">報名詳情 →</button>
-              </article>
-            ))}
+          <div className="events-list">
+            <div className="week-grid">
+              {eventsList.map((event, index) => (
+                <article
+                  key={event.id}
+                  className="week-card"
+                  style={{ "--delay": `${index * 0.05}s` } as React.CSSProperties}
+                >
+                  <div className="week-card-body">
+                    <div className="week-card-header">
+                      <div>
+                        <span className="pill">{event.status}</span>
+                        <h3>{event.title}</h3>
+                      </div>
+                      <button className="text-link">報名詳情 →</button>
+                    </div>
+                    <div className="week-meta">
+                      <span>分站：{event.location}</span>
+                      <span>時間：{event.date}</span>
+                      {event.description && <span>說明：{event.description}</span>}
+                      <span>名額：{event.capacity ?? "不限"}</span>
+                    </div>
+                  </div>
+                  <div className="week-card-media">
+                    {event.posterUrl ? (
+                      <img src={event.posterUrl} alt={`${event.title} 海報`} />
+                    ) : (
+                      <div className="week-card-placeholder">
+                        <span>無海報</span>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
       )}
@@ -2079,6 +2328,90 @@ export default function App() {
             <div>
               <p className="eyebrow">後台管理</p>
               <h2>代禱 / 會員 / 活動 管理入口</h2>
+            </div>
+          </div>
+          <div className="panel form-panel">
+            <h3>本週金句設定</h3>
+            <form className="form-grid" onSubmit={handleUpdateWeeklyVerse}>
+              <label className="field">
+                分站
+                <select
+                  value={weeklyVerseSiteId}
+                  onChange={(event) =>
+                    setWeeklyVerseForm((prev) => ({ ...prev, siteId: event.target.value }))
+                  }
+                  disabled={weeklyVerseSiteLocked}
+                >
+                  <option value="11111111-1111-1111-1111-111111111111">生命河中心</option>
+                  <option value="22222222-2222-2222-2222-222222222222">光復教會</option>
+                  <option value="33333333-3333-3333-3333-333333333333">第二教會</option>
+                  <option value="44444444-4444-4444-4444-444444444444">府中教會</option>
+                </select>
+              </label>
+              <label className="field">
+                週日日期
+                <input
+                  type="date"
+                  value={weeklyVerseForm.weekStart}
+                  onChange={(event) =>
+                    setWeeklyVerseForm((prev) => ({ ...prev, weekStart: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field field-full">
+                金句內容
+                <textarea
+                  rows={3}
+                  value={weeklyVerseForm.text}
+                  onChange={(event) =>
+                    setWeeklyVerseForm((prev) => ({ ...prev, text: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field">
+                經文出處
+                <input
+                  value={weeklyVerseForm.reference}
+                  onChange={(event) =>
+                    setWeeklyVerseForm((prev) => ({ ...prev, reference: event.target.value }))
+                  }
+                />
+              </label>
+              <div className="field">
+                <button className="button primary" type="submit">
+                  {weeklyVerseEditingId ? "更新金句" : "新增金句"}
+                </button>
+              </div>
+            </form>
+            {weeklyVerseMessage && <p className="muted">{weeklyVerseMessage}</p>}
+            <div className="weekly-verse-list">
+              {weeklyVerseList.length ? (
+                weeklyVerseList.map((item) => (
+                  <div key={item.id} className="weekly-verse-item">
+                    <div>
+                      <p className="muted">週日：{formatWeekStartDate(item.week_start)}</p>
+                      <p>「{item.text}」</p>
+                      <p className="muted">{item.reference}</p>
+                    </div>
+                    <div className="button-row">
+                      <button
+                        className="button outline small"
+                        onClick={() => handleEditWeeklyVerse(item)}
+                      >
+                        編輯
+                      </button>
+                      <button
+                        className="button ghost small"
+                        onClick={() => handleDeleteWeeklyVerse(item.id)}
+                      >
+                        刪除
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="muted">尚無金句紀錄。</p>
+              )}
             </div>
           </div>
           <div className="admin-tabs">
@@ -2791,6 +3124,7 @@ export default function App() {
           <a href="#">加入同工</a>
         </div>
       </footer>
+      </div>
     </div>
   );
 }

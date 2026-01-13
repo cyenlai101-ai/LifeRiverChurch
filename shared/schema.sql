@@ -49,6 +49,29 @@ create table if not exists public.dashboard_summaries (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+create table if not exists public.weekly_verses (
+  id uuid default uuid_generate_v4() primary key,
+  site_id uuid not null references public.sites(id),
+  week_start date not null,
+  text text not null,
+  reference text not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table if exists public.weekly_verses
+  add column if not exists week_start date;
+
+update public.weekly_verses
+  set week_start = current_date - (extract(dow from current_date)::int)
+  where week_start is null;
+
+alter table if exists public.weekly_verses
+  alter column week_start set not null;
+
+drop index if exists weekly_verses_site_id_key;
+create unique index if not exists weekly_verses_site_week_key
+  on public.weekly_verses (site_id, week_start);
+
 do $$
 begin
   if not exists (select 1 from pg_type where typname = 'event_status') then

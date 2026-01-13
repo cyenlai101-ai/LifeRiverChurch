@@ -62,6 +62,16 @@ values
   )
 on conflict (user_id) do nothing;
 
+insert into public.weekly_verses (id, site_id, week_start, text, reference)
+values (
+  '99999999-9999-9999-9999-999999999999',
+  '11111111-1111-1111-1111-111111111111',
+  current_date - (extract(dow from current_date)::int),
+  '凡勞苦擔重擔的人，可以到我這裡來。',
+  '馬太福音 11:28'
+)
+on conflict (id) do nothing;
+
 insert into public.events (id, site_id, title, description, start_at, end_at, capacity, waitlist_enabled, status, created_by)
 values
   (
