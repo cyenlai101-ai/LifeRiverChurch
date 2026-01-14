@@ -58,6 +58,20 @@ create table if not exists public.weekly_verses (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+create table if not exists public.sunday_messages (
+  id uuid default uuid_generate_v4() primary key,
+  site_id uuid not null references public.sites(id),
+  message_date date not null,
+  title text not null,
+  speaker text,
+  youtube_url text not null,
+  description text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create index if not exists sunday_messages_site_date_idx
+  on public.sunday_messages (site_id, message_date desc);
+
 alter table if exists public.weekly_verses
   add column if not exists week_start date;
 

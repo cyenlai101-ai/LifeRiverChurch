@@ -8,6 +8,27 @@ import {
   apiUpload,
   LoginResponse,
 } from "./api/client";
+import EventCard from "./components/EventCard";
+import useEvents from "./hooks/useEvents";
+import useEventsFilters from "./hooks/useEventsFilters";
+import usePrayers from "./hooks/usePrayers";
+import useRegistrations from "./hooks/useRegistrations";
+import useUserProfile from "./hooks/useUserProfile";
+import useWeeklyVerse from "./hooks/useWeeklyVerse";
+import RegistrationView from "./views/RegistrationView";
+import {
+  buildDateTime,
+  formatDateLabel,
+  formatDateInput,
+  formatDateRange,
+  formatEventTimePreview,
+  formatWeekStartDate,
+  getCurrentSundayDate,
+  splitDateTime,
+} from "./utils/date";
+import { resolveSiteName, siteUuidByCode } from "./utils/site";
+import { eventStatusLabelMap, roleLabelMap } from "./utils/text";
+import { resolveEventStatus } from "./utils/status";
 
 type SiteTheme = {
   id: string;
@@ -43,6 +64,17 @@ type WeeklyVerse = {
   text: string;
   reference: string;
   updated_at: string;
+};
+
+type SundayMessage = {
+  id: string;
+  site_id: string;
+  message_date: string;
+  title: string;
+  speaker?: string | null;
+  youtube_url: string;
+  description?: string | null;
+  created_at: string;
 };
 
 type UserProfile = {
@@ -95,14 +127,15 @@ type AdminUserItem = {
   created_at: string;
 };
 
-type RegistrationItem = {
-  id: string;
-  event_id: string;
-  ticket_count: number;
-  status: string;
-};
-
-type ActiveView = "home" | "member" | "events" | "prayers" | "care" | "admin" | "registration";
+type ActiveView =
+  | "home"
+  | "member"
+  | "events"
+  | "prayers"
+  | "care"
+  | "admin"
+  | "registration"
+  | "messages";
 
 const sites: SiteTheme[] = [
   {
@@ -146,20 +179,6 @@ const sites: SiteTheme[] = [
     tagline: "在城市節奏裡守住溫柔與盼望。",
   },
 ];
-
-const siteIdMap: Record<string, string> = {
-  "11111111-1111-1111-1111-111111111111": "生命河中心",
-  "22222222-2222-2222-2222-222222222222": "光復教會",
-  "33333333-3333-3333-3333-333333333333": "第二教會",
-  "44444444-4444-4444-4444-444444444444": "府中教會",
-};
-
-const siteUuidByCode: Record<string, string> = {
-  center: "11111111-1111-1111-1111-111111111111",
-  guangfu: "22222222-2222-2222-2222-222222222222",
-  second: "33333333-3333-3333-3333-333333333333",
-  fuzhong: "44444444-4444-4444-4444-444444444444",
-};
 
 const news = [
   {
@@ -241,13 +260,7 @@ export default function App() {
   const [registerMessage, setRegisterMessage] = useState("");
   const [token, setToken] = useState<string | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [eventsData, setEventsData] = useState<EventItem[] | null>(null);
-  const [registrationsData, setRegistrationsData] = useState<RegistrationItem[] | null>(null);
-  const [prayersData, setPrayersData] = useState<PrayerItem[] | null>(null);
   const [careData, setCareData] = useState<CareSubjectItem[] | null>(null);
-  const [weeklyVerse, setWeeklyVerse] = useState<WeeklyVerse | null>(null);
-  const [weeklyVerseList, setWeeklyVerseList] = useState<WeeklyVerse[]>([]);
   const [weeklyVerseEditingId, setWeeklyVerseEditingId] = useState<string | null>(null);
   const [weeklyVerseForm, setWeeklyVerseForm] = useState({
     siteId: siteUuidByCode.center,
@@ -256,15 +269,45 @@ export default function App() {
     reference: "",
   });
   const [weeklyVerseMessage, setWeeklyVerseMessage] = useState("");
+  const [homeSundayMessages, setHomeSundayMessages] = useState<SundayMessage[]>([]);
+  const [sundayMessages, setSundayMessages] = useState<SundayMessage[]>([]);
+  const [sundayMessageQuery, setSundayMessageQuery] = useState("");
+  const [sundayMessageSite, setSundayMessageSite] = useState("all");
+  const [sundayMessageSortBy, setSundayMessageSortBy] = useState("message_date");
+  const [sundayMessageSortDir, setSundayMessageSortDir] = useState("desc");
+  const [sundayMessageLimit, setSundayMessageLimit] = useState(12);
+  const [sundayMessageOffset, setSundayMessageOffset] = useState(0);
+  const [adminSundayMessages, setAdminSundayMessages] = useState<SundayMessage[]>([]);
+  const [adminSundayMessageLimit, setAdminSundayMessageLimit] = useState(12);
+  const [adminSundayMessageOffset, setAdminSundayMessageOffset] = useState(0);
+  const [sundayMessageEditingId, setSundayMessageEditingId] = useState<string | null>(null);
+  const [sundayMessageForm, setSundayMessageForm] = useState({
+    messageDate: "",
+    title: "",
+    speaker: "",
+    youtubeUrl: "",
+    description: "",
+  });
+  const [sundayMessageMessage, setSundayMessageMessage] = useState("");
   const [viewMessage, setViewMessage] = useState("");
-  const [eventQuery, setEventQuery] = useState("");
-  const [eventStatus, setEventStatus] = useState("");
-  const [eventSite, setEventSite] = useState("");
-  const [eventUpcomingOnly, setEventUpcomingOnly] = useState(false);
-  const [eventSortBy, setEventSortBy] = useState("start_at");
-  const [eventSortDir, setEventSortDir] = useState("desc");
-  const [eventLimit, setEventLimit] = useState(50);
-  const [eventOffset, setEventOffset] = useState(0);
+  const {
+    eventQuery,
+    setEventQuery,
+    eventStatus,
+    setEventStatus,
+    eventSite,
+    setEventSite,
+    eventUpcomingOnly,
+    setEventUpcomingOnly,
+    eventSortBy,
+    setEventSortBy,
+    eventSortDir,
+    setEventSortDir,
+    eventLimit,
+    setEventLimit,
+    eventOffset,
+    setEventOffset,
+  } = useEventsFilters();
   const [eventForm, setEventForm] = useState({
     title: "",
     description: "",
@@ -326,21 +369,15 @@ export default function App() {
     status: "Active",
     siteId: "",
   });
-  const [adminPrayers, setAdminPrayers] = useState<PrayerItem[] | null>(null);
   const [adminMessage, setAdminMessage] = useState("");
-  const [adminTab, setAdminTab] = useState<"prayers" | "members" | "events">("prayers");
+  const [adminTab, setAdminTab] = useState<"prayers" | "members" | "events" | "messages">(
+    "prayers"
+  );
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [eventPosterFile, setEventPosterFile] = useState<File | null>(null);
   const [eventPosterPreview, setEventPosterPreview] = useState<string | null>(null);
-  const [homeEvents, setHomeEvents] = useState<EventItem[] | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
-  const [profileForm, setProfileForm] = useState({
-    fullName: "",
-    email: "",
-    phone: "",
-    memberType: "Member",
-  });
   const [profileMessage, setProfileMessage] = useState("");
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
@@ -390,24 +427,91 @@ export default function App() {
   };
 
   const summaryData = summary ?? fallbackSummary;
-  const eventStatusLabelMap: Record<EventItem["status"], string> = {
-    Draft: "草稿",
-    Published: "已發布",
-    Closed: "已結束",
-  };
-  const registrationCountByEvent = useMemo(() => {
-    const counts: Record<string, number> = {};
-    if (!registrationsData) {
-      return counts;
-    }
-    registrationsData.forEach((item) => {
-      if (!item.event_id) {
-        return;
-      }
-      counts[item.event_id] = (counts[item.event_id] || 0) + (item.ticket_count || 0);
-    });
-    return counts;
-  }, [registrationsData]);
+  const {
+    currentUser,
+    setCurrentUser,
+    profileForm,
+    setProfileForm,
+  } = useUserProfile({
+    token,
+    setLoginMessage,
+    setWeeklyVerseForm,
+    weeklyVerseFormSiteId: weeklyVerseForm.siteId,
+    centerSiteId: siteUuidByCode.center,
+  });
+  const currentUserLabel =
+    currentUser?.full_name || currentUser?.email || "\u5c1a\u672a\u767b\u5165";
+  const staffRoles = new Set<UserProfile["role"]>([
+    "Admin",
+    "CenterStaff",
+    "BranchStaff",
+    "Leader",
+  ]);
+  const isStaff = currentUser ? staffRoles.has(currentUser.role) : false;
+  const weeklyVerseSiteId = currentUser?.site_id || weeklyVerseForm.siteId;
+  const weeklyVerseSiteLocked = true;
+  const { registrationCountByEvent } = useRegistrations(token);
+  const {
+    prayersData,
+    setPrayersData,
+    adminPrayers,
+    setAdminPrayers,
+    prayersError,
+    adminPrayersError,
+  } = usePrayers({
+    activeView,
+    token,
+    isStaff,
+    buildPrayersPath,
+    buildAdminPrayersPath,
+    publicDeps: [
+      prayerQuery,
+      prayerPrivacy,
+      prayerSite,
+      prayerSortBy,
+      prayerSortDir,
+      prayerLimit,
+      prayerOffset,
+    ],
+    adminDeps: [
+      adminPrayerQuery,
+      adminPrayerPrivacy,
+      adminPrayerSite,
+      adminPrayerSortBy,
+      adminPrayerSortDir,
+      adminPrayerLimit,
+      adminPrayerOffset,
+    ],
+  });
+  const { weeklyVerse, weeklyVerseList, setWeeklyVerseList } = useWeeklyVerse({
+    activeView,
+    homeSiteId: siteUuidByCode[activeSiteId],
+    weeklyVerseSiteId,
+    weeklyVerseForm,
+    setWeeklyVerseForm,
+    setWeeklyVerseMessage,
+  });
+  const {
+    eventsData,
+    homeEvents,
+    eventsError,
+    setEventsData,
+    refreshEvents,
+  } = useEvents({
+    activeView,
+    adminTab,
+    filters: {
+      query: eventQuery,
+      status: eventStatus,
+      site: eventSite,
+      upcomingOnly: eventUpcomingOnly,
+      sortBy: eventSortBy,
+      sortDir: eventSortDir,
+      limit: eventLimit,
+      offset: eventOffset,
+    },
+    homeSiteId: siteUuidByCode[activeSiteId],
+  });
   const weekEventItems =
     homeEvents && homeEvents.length
       ? homeEvents
@@ -493,35 +597,47 @@ export default function App() {
           ...item,
           id: String(index),
         }));
-  const staffRoles = new Set<UserProfile["role"]>([
-    "Admin",
-    "CenterStaff",
-    "BranchStaff",
-    "Leader",
-  ]);
-  const isStaff = currentUser ? staffRoles.has(currentUser.role) : false;
-  const weeklyVerseSiteId = currentUser?.site_id || weeklyVerseForm.siteId;
-  const weeklyVerseSiteLocked = true;
+  const sundayMessageSiteId =
+    sundayMessageSite === "all" ? null : siteUuidByCode[sundayMessageSite];
+  const adminSundayMessageSiteId = currentUser?.site_id || siteUuidByCode.center;
   const homeVerse = weeklyVerse ?? {
     text: "凡勞苦擔重擔的人，可以到我這裡來。",
     reference: "馬太福音 11:28",
-  };
-  const roleLabelMap: Record<UserProfile["role"], string> = {
-    Admin: "系統管理",
-    CenterStaff: "中心同工",
-    BranchStaff: "分站同工",
-    Leader: "小組長",
-    Member: "會員",
   };
 
   useEffect(() => {
     setViewMessage("");
     setAdminMessage("");
+    setSundayMessageMessage("");
   }, [activeView]);
 
   useEffect(() => {
-    setEventOffset(0);
-  }, [eventQuery, eventStatus, eventSite, eventUpcomingOnly, eventSortBy, eventSortDir, eventLimit]);
+    if (eventsError) {
+      setViewMessage(eventsError);
+    }
+  }, [eventsError]);
+
+  useEffect(() => {
+    if (prayersError) {
+      setViewMessage(prayersError);
+    }
+  }, [prayersError]);
+
+  useEffect(() => {
+    if (adminPrayersError) {
+      setAdminMessage(adminPrayersError);
+    }
+  }, [adminPrayersError]);
+
+  useEffect(() => {
+    setSundayMessageOffset(0);
+  }, [
+    sundayMessageQuery,
+    sundayMessageSite,
+    sundayMessageSortBy,
+    sundayMessageSortDir,
+    sundayMessageLimit,
+  ]);
 
   useEffect(() => {
     setPrayerOffset(0);
@@ -536,9 +652,12 @@ export default function App() {
   }, [adminPrayerQuery, adminPrayerPrivacy, adminPrayerSite, adminPrayerSortBy, adminPrayerSortDir, adminPrayerLimit]);
 
   useEffect(() => {
+    setAdminSundayMessageOffset(0);
+  }, [adminSundayMessageLimit, adminSundayMessageSiteId]);
+
+  useEffect(() => {
     if (!token) {
       setSummary(null);
-      setCurrentUser(null);
       setActiveView("home");
       setPostLoginAction(null);
       setPendingRegistrationEvent(null);
@@ -549,7 +668,6 @@ export default function App() {
         proxyEntries: [{ name: "", phone: "", relation: "", note: "" }],
       });
       setRegistrationMessage("");
-      setRegistrationsData(null);
       return;
     }
     apiGet<DashboardSummary>("/dashboard/summary", token)
@@ -561,180 +679,72 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    if (!token) {
-      setRegistrationsData(null);
-      return;
+    if (!sundayMessageForm.messageDate) {
+      setSundayMessageForm((prev) => ({ ...prev, messageDate: getCurrentSundayDate() }));
     }
-    apiGet<RegistrationItem[]>("/registrations", token)
-      .then((data) => setRegistrationsData(data))
-      .catch(() => setRegistrationsData([]));
-  }, [token]);
+  }, [sundayMessageForm.messageDate]);
 
   useEffect(() => {
-    if (!token) {
+    if (activeView !== "home") {
       return;
     }
-    apiGet<UserProfile>("/auth/me", token)
-      .then((data) => setCurrentUser(data))
-      .catch((error) => {
-        setLoginMessage(error?.message || "取得登入資訊失敗");
-        setCurrentUser(null);
-      });
-  }, [token]);
+    const params = new URLSearchParams();
+    if (siteUuidByCode[activeSiteId]) {
+      params.set("site_id", siteUuidByCode[activeSiteId]);
+    }
+    params.set("limit", "5");
+    const path = params.toString()
+      ? `/sunday-messages/latest?${params.toString()}`
+      : "/sunday-messages/latest";
+    apiGet<SundayMessage[]>(path)
+      .then((data) => setHomeSundayMessages(data))
+      .catch(() => setHomeSundayMessages([]));
+  }, [activeView, activeSiteId]);
 
   useEffect(() => {
-    if (!currentUser) {
+    if (activeView !== "messages") {
       return;
     }
-    setProfileForm({
-      fullName: currentUser.full_name || "",
-      email: currentUser.email || "",
-      phone: currentUser.phone || "",
-      memberType: currentUser.member_type || "Member",
-    });
-    if (
-      currentUser.site_id &&
-      weeklyVerseForm.siteId === siteUuidByCode.center &&
-      currentUser.site_id !== siteUuidByCode.center
-    ) {
-      setWeeklyVerseForm((prev) => ({ ...prev, siteId: currentUser.site_id }));
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!weeklyVerseForm.weekStart) {
-      setWeeklyVerseForm((prev) => ({ ...prev, weekStart: getCurrentSundayDate() }));
-    }
-  }, [weeklyVerseForm.weekStart]);
-
-  useEffect(() => {
-    if (activeView !== "events") {
-      return;
-    }
-    apiGet<EventItem[]>(buildEventsPath())
-      .then((data) => setEventsData(data))
-      .catch((error) => {
-        setViewMessage(error?.message || "取得活動列表失敗");
-        setEventsData(null);
-      });
+    apiGet<SundayMessage[]>(buildSundayMessagesPath())
+      .then((data) => setSundayMessages(data))
+      .catch(() => setSundayMessages([]));
   }, [
     activeView,
-    eventQuery,
-    eventStatus,
-    eventSite,
-    eventUpcomingOnly,
-    eventSortBy,
-    eventSortDir,
-    eventLimit,
-    eventOffset,
+    sundayMessageQuery,
+    sundayMessageSite,
+    sundayMessageSortBy,
+    sundayMessageSortDir,
+    sundayMessageLimit,
+    sundayMessageOffset,
   ]);
 
   useEffect(() => {
-    if (activeView !== "home") {
+    if (activeView !== "admin" || adminTab !== "messages" || !token || !isStaff) {
       return;
     }
-    const siteId = siteUuidByCode[activeSiteId];
-    const params = new URLSearchParams({
-      limit: "4",
-      sort_by: "start_at",
-      sort_dir: "desc",
-    });
-    if (siteId) {
-      params.set("site_id", siteId);
-    }
-    apiGet<EventItem[]>(`/events?${params.toString()}`)
-      .then((data) => setHomeEvents(data))
-      .catch(() => setHomeEvents([]));
-  }, [activeView, activeSiteId]);
-
-  useEffect(() => {
-    if (activeView !== "home") {
-      return;
-    }
-    const siteId = siteUuidByCode[activeSiteId];
-    if (!siteId) {
-      setWeeklyVerse(null);
-      return;
-    }
-    apiGet<WeeklyVerse>(`/weekly-verse/current?site_id=${siteId}`)
-      .then((data) => setWeeklyVerse(data))
-      .catch(() => setWeeklyVerse(null));
-  }, [activeView, activeSiteId]);
-
-  useEffect(() => {
-    if (!weeklyVerse) {
-      return;
-    }
-    setWeeklyVerseForm((prev) => ({
-      ...prev,
-      siteId: weeklyVerse.site_id,
-      weekStart: weeklyVerse.week_start,
-      text: weeklyVerse.text,
-      reference: weeklyVerse.reference,
-    }));
-  }, [weeklyVerse]);
-
-  useEffect(() => {
-    if (activeView !== "admin" || adminTab !== "events") {
-      return;
-    }
-    apiGet<EventItem[]>(buildEventsPath())
-      .then((data) => setEventsData(data))
+    apiGet<SundayMessage[]>(buildAdminSundayMessagesPath(), token)
+      .then((data) => setAdminSundayMessages(data))
       .catch((error) => {
-        setViewMessage(error?.message || "取得活動列表失敗");
-        setEventsData(null);
+        setAdminMessage(error?.message || "\u8b80\u53d6\u4e3b\u65e5\u4fe1\u606f\u5931\u6557");
+        setAdminSundayMessages([]);
       });
   }, [
     activeView,
     adminTab,
-    eventQuery,
-    eventStatus,
-    eventSite,
-    eventUpcomingOnly,
-    eventSortBy,
-    eventSortDir,
-    eventLimit,
-    eventOffset,
+    token,
+    isStaff,
+    adminSundayMessageLimit,
+    adminSundayMessageOffset,
+    adminSundayMessageSiteId,
   ]);
 
-  useEffect(() => {
-    if (activeView !== "admin") {
-      return;
-    }
-    const siteId = weeklyVerseSiteId;
-    if (!siteId) {
-      setWeeklyVerse(null);
-      return;
-    }
-    apiGet<WeeklyVerse[]>(`/weekly-verse?site_id=${siteId}`)
-      .then((data) => setWeeklyVerseList(data))
-      .catch(() => setWeeklyVerseList([]));
-  }, [activeView, weeklyVerseSiteId]);
 
-  useEffect(() => {
-    setWeeklyVerseMessage("");
-  }, [weeklyVerseForm.siteId]);
 
-  useEffect(() => {
-    if (activeView !== "prayers") {
-      return;
-    }
-    apiGet<PrayerItem[]>(buildPrayersPath())
-      .then((data) => setPrayersData(data))
-      .catch((error) => {
-        setViewMessage(error?.message || "取得代禱牆失敗");
-        setPrayersData(null);
-      });
-  }, [
-    activeView,
-    prayerQuery,
-    prayerPrivacy,
-    prayerSite,
-    prayerSortBy,
-    prayerSortDir,
-    prayerLimit,
-    prayerOffset,
-  ]);
+
+
+
+
+
 
   useEffect(() => {
     if (activeView !== "care" || !token || !isStaff) {
@@ -759,28 +769,7 @@ export default function App() {
     careOffset,
   ]);
 
-  useEffect(() => {
-    if (activeView !== "admin" || !token || !isStaff) {
-      return;
-    }
-    apiGet<PrayerItem[]>(buildAdminPrayersPath(), token)
-      .then((data) => setAdminPrayers(data))
-      .catch((error) => {
-        setAdminMessage(error?.message || "取得待審核代禱失敗");
-        setAdminPrayers(null);
-      });
-  }, [
-    activeView,
-    token,
-    isStaff,
-    adminPrayerQuery,
-    adminPrayerPrivacy,
-    adminPrayerSite,
-    adminPrayerSortBy,
-    adminPrayerSortDir,
-    adminPrayerLimit,
-    adminPrayerOffset,
-  ]);
+
 
   useEffect(() => {
     if (activeView !== "admin" || !token || !isStaff) {
@@ -810,6 +799,7 @@ export default function App() {
     setViewMessage("");
     setAdminMessage("");
     setAdminUserMessage("");
+    setSundayMessageMessage("");
     setSelectedUser(null);
     setRegistrationMessage("");
   }, [activeView]);
@@ -914,12 +904,7 @@ export default function App() {
       } else {
         setActiveView("member");
       }
-      apiGet<UserProfile>("/auth/me", data.access_token)
-        .then((profile) => setCurrentUser(profile))
-        .catch((error) => {
-          setLoginMessage(error?.message || "取得登入資訊失敗");
-          setCurrentUser(null);
-        });
+      setCurrentUser(null);
     } catch (error: any) {
       setLoginMessage(error?.message || "登入失敗");
     }
@@ -964,6 +949,18 @@ export default function App() {
     setCareData(null);
     setAdminUsers(null);
     setAdminPrayers(null);
+    setAdminSundayMessages([]);
+    setHomeSundayMessages([]);
+    setSundayMessages([]);
+    setSundayMessageEditingId(null);
+    setSundayMessageMessage("");
+    setSundayMessageForm({
+      messageDate: getCurrentSundayDate(),
+      title: "",
+      speaker: "",
+      youtubeUrl: "",
+      description: "",
+    });
     setSelectedUser(null);
   };
 
@@ -1044,6 +1041,81 @@ export default function App() {
     }
   };
 
+  const handleSubmitSundayMessage = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!token) {
+      setIsLoginOpen(true);
+      return;
+    }
+    setSundayMessageMessage("");
+    try {
+      const payload = {
+        site_id: adminSundayMessageSiteId,
+        message_date: sundayMessageForm.messageDate,
+        title: sundayMessageForm.title,
+        speaker: sundayMessageForm.speaker || null,
+        youtube_url: sundayMessageForm.youtubeUrl,
+        description: sundayMessageForm.description || null,
+      };
+      if (sundayMessageEditingId) {
+        await apiPatch<SundayMessage>(
+          `/sunday-messages/${sundayMessageEditingId}`,
+          payload,
+          token
+        );
+        setSundayMessageMessage("\u4e3b\u65e5\u4fe1\u606f\u5df2\u66f4\u65b0");
+      } else {
+        await apiPost<SundayMessage>("/sunday-messages", payload, token);
+        setSundayMessageMessage("\u4e3b\u65e5\u4fe1\u606f\u5df2\u65b0\u589e");
+      }
+      const data = await apiGet<SundayMessage[]>(buildAdminSundayMessagesPath(), token);
+      setAdminSundayMessages(data);
+      setSundayMessageEditingId(null);
+    } catch (error: any) {
+      setSundayMessageMessage(error?.message || "\u66f4\u65b0\u4e3b\u65e5\u4fe1\u606f\u5931\u6557");
+    }
+  };
+
+  const handleEditSundayMessage = (item: SundayMessage) => {
+    setSundayMessageEditingId(item.id);
+    setSundayMessageForm({
+      messageDate: item.message_date,
+      title: item.title,
+      speaker: item.speaker || "",
+      youtubeUrl: item.youtube_url,
+      description: item.description || "",
+    });
+  };
+
+  const handleDeleteSundayMessage = async (messageId: string) => {
+    if (!token) {
+      setIsLoginOpen(true);
+      return;
+    }
+    if (!window.confirm("\u78ba\u5b9a\u8981\u522a\u9664\u9019\u5247\u4e3b\u65e5\u4fe1\u606f\u55ce\uff1f")) {
+      return;
+    }
+    try {
+      await apiDelete(`/sunday-messages/${messageId}`, token);
+      const data = await apiGet<SundayMessage[]>(buildAdminSundayMessagesPath(), token);
+      setAdminSundayMessages(data);
+      setSundayMessageMessage("\u4e3b\u65e5\u4fe1\u606f\u5df2\u522a\u9664");
+      if (sundayMessageEditingId === messageId) {
+        setSundayMessageEditingId(null);
+        setSundayMessageForm((prev) => ({
+          ...prev,
+          messageDate: getCurrentSundayDate(),
+          title: "",
+          speaker: "",
+          youtubeUrl: "",
+          description: "",
+        }));
+      }
+    } catch (error: any) {
+      setSundayMessageMessage(error?.message || "\u522a\u9664\u4e3b\u65e5\u4fe1\u606f\u5931\u6557");
+    }
+  };
+
   const handleCreateEvent = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!token) {
@@ -1084,9 +1156,7 @@ export default function App() {
       setEventPosterPreview(null);
       setEventModalOpen(false);
       setViewMessage(selectedEventId ? "活動已更新" : "活動已建立");
-      apiGet<EventItem[]>(buildEventsPath())
-        .then((data) => setEventsData(data))
-        .catch(() => setEventsData(null));
+      refreshEvents();
     } catch (error: any) {
       setViewMessage(error?.message || "活動送出失敗");
     }
@@ -1103,9 +1173,7 @@ export default function App() {
     }
     try {
       await apiPatch<EventItem>(`/events/${eventId}`, { status: "Published" }, token);
-      apiGet<EventItem[]>(buildEventsPath())
-        .then((data) => setEventsData(data))
-        .catch(() => setEventsData(null));
+      refreshEvents();
       setViewMessage("活動已發布");
     } catch (error: any) {
       setViewMessage(error?.message || "發布活動失敗");
@@ -1126,9 +1194,7 @@ export default function App() {
     }
     try {
       await apiDelete(`/events/${eventId}`, token);
-      apiGet<EventItem[]>(buildEventsPath())
-        .then((data) => setEventsData(data))
-        .catch(() => setEventsData(null));
+      refreshEvents();
       setViewMessage("活動已刪除");
     } catch (error: any) {
       setViewMessage(error?.message || "刪除活動失敗");
@@ -1357,13 +1423,6 @@ export default function App() {
     }
   };
 
-  function resolveSiteName(siteId?: string | null) {
-    if (!siteId) {
-      return "未指定場地";
-    }
-    return siteIdMap[siteId] || "分站活動";
-  }
-
   function resolvePosterUrl(posterUrl?: string | null) {
     if (!posterUrl) {
       return null;
@@ -1372,19 +1431,6 @@ export default function App() {
       return posterUrl;
     }
     return `${API_BASE_URL}${posterUrl}`;
-  }
-
-  function buildEventsPath() {
-    const params = new URLSearchParams();
-    if (eventQuery) params.set("q", eventQuery);
-    if (eventStatus) params.set("status", eventStatus);
-    if (eventSite) params.set("site_id", eventSite);
-    if (eventUpcomingOnly) params.set("upcoming_only", "true");
-    if (eventSortBy) params.set("sort_by", eventSortBy);
-    if (eventSortDir) params.set("sort_dir", eventSortDir);
-    params.set("limit", String(eventLimit));
-    params.set("offset", String(eventOffset));
-    return params.toString() ? `/events?${params.toString()}` : "/events";
   }
 
   function buildPrayersPath() {
@@ -1436,159 +1482,33 @@ export default function App() {
     return params.toString() ? `/admin/users?${params.toString()}` : "/admin/users";
   }
 
-  function formatDateRange(startAt: string, endAt?: string | null) {
-    const start = new Date(startAt);
-    if (!Number.isFinite(start.getTime())) {
-      return startAt;
-    }
-    const startLabel = start.toLocaleString("zh-TW", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    if (!endAt) {
-      return startLabel;
-    }
-    const end = new Date(endAt);
-    if (!Number.isFinite(end.getTime())) {
-      return startLabel;
-    }
-    const endLabel = end.toLocaleString("zh-TW", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    return `${startLabel} - ${endLabel}`;
+  function buildSundayMessagesPath() {
+    const params = new URLSearchParams();
+    if (sundayMessageQuery) params.set("query", sundayMessageQuery);
+    if (sundayMessageSiteId) params.set("site_id", sundayMessageSiteId);
+    if (sundayMessageSortBy) params.set("sort_by", sundayMessageSortBy);
+    if (sundayMessageSortDir) params.set("sort_dir", sundayMessageSortDir);
+    params.set("limit", String(sundayMessageLimit));
+    params.set("offset", String(sundayMessageOffset));
+    return params.toString()
+      ? `/sunday-messages/public?${params.toString()}`
+      : "/sunday-messages/public";
   }
 
-  function resolveEventStatus(event: EventItem): EventItem["status"] {
-    if (event.status === "Draft") {
-      return "Draft";
-    }
-    if (event.end_at) {
-      const end = new Date(event.end_at);
-      if (Number.isFinite(end.getTime()) && end.getTime() < Date.now()) {
-        return "Closed";
-      }
-    }
-    return event.status;
-  }
-
-  function formatWeekStartDate(value?: string | null) {
-    if (!value) {
-      return "";
-    }
-    const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) {
-      return value;
-    }
-    return date.toLocaleDateString("zh-TW", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-  }
-
-  function getCurrentSundayDate() {
-    const today = new Date();
-    const day = today.getDay();
-    const diff = day === 0 ? 0 : day;
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() - diff);
-    const pad = (num: number) => String(num).padStart(2, "0");
-    return `${sunday.getFullYear()}-${pad(sunday.getMonth() + 1)}-${pad(sunday.getDate())}`;
-  }
-
-  function formatEventTimePreview(startAt: string, endAt?: string | null) {
-    const start = new Date(startAt);
-    if (!Number.isFinite(start.getTime())) {
-      return "";
-    }
-    const startDate = start.toLocaleDateString("zh-TW", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const startTime = start.toLocaleTimeString("zh-TW", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    if (!endAt) {
-      return `${startDate} ${startTime}`;
-    }
-    const end = new Date(endAt);
-    if (!Number.isFinite(end.getTime())) {
-      return `${startDate} ${startTime}`;
-    }
-    const endDate = end.toLocaleDateString("zh-TW", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    const endTime = end.toLocaleTimeString("zh-TW", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    if (endDate === startDate) {
-      return `${startDate} ${startTime} - ${endTime}`;
-    }
-    return `${startDate} ${startTime} - ${endDate} ${endTime}`;
-  }
-
-  function publicEventStatusLabel(status: EventItem["status"]) {
-    if (status === "Published") {
-      return "已開放報名";
-    }
-    if (status === "Closed") {
-      return "已結束";
-    }
-    return "尚未開放";
-  }
-
-  function splitDateTime(value: string) {
-    if (!value) {
-      return { date: "", hour: "", minute: "" };
-    }
-    const parts = value.split("T");
-    if (parts.length !== 2) {
-      return { date: "", hour: "", minute: "" };
-    }
-    const [datePart, timePart] = parts;
-    const timeParts = timePart.split(":");
-    return {
-      date: datePart,
-      hour: timeParts[0] ?? "",
-      minute: timeParts[1] ?? "",
-    };
-  }
-
-  function buildDateTime(date: string, hour: string, minute: string) {
-    if (!date || !hour || !minute) {
-      return "";
-    }
-    const pad = (value: string) => value.padStart(2, "0");
-    return `${date}T${pad(hour)}:${pad(minute)}`;
+  function buildAdminSundayMessagesPath() {
+    const params = new URLSearchParams();
+    if (adminSundayMessageSiteId) params.set("site_id", adminSundayMessageSiteId);
+    params.set("limit", String(adminSundayMessageLimit));
+    params.set("offset", String(adminSundayMessageOffset));
+    return params.toString()
+      ? `/sunday-messages?${params.toString()}`
+      : "/sunday-messages";
   }
 
   function isUuid(value: string) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       value
     );
-  }
-
-  function formatDateInput(value: string) {
-    const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) {
-      return "";
-    }
-    const pad = (num: number) => String(num).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-      date.getHours()
-    )}:${pad(date.getMinutes())}`;
   }
 
   function privacyLabel(level: PrayerItem["privacy_level"]) {
@@ -1713,6 +1633,13 @@ export default function App() {
           >
             活動
           </button>
+          <button
+            className={`nav-link ${activeView === "messages" ? "active" : ""}`}
+            onClick={() => setActiveView("messages")}
+          >
+            主日聚會信息
+          </button>
+
           <button className="nav-link">小組</button>
           <button
             className={`nav-link ${activeView === "prayers" ? "active" : ""}`}
@@ -1953,56 +1880,73 @@ export default function App() {
             <div className="week-grid">
               {weekEventItems.length ? (
                 weekEventItems.map((event, index) => (
-                  <article
+                  <EventCard
                     key={event.id}
-                    className="week-card"
-                    style={{ "--delay": `${index * 0.08}s` } as React.CSSProperties}
-                  >
-                    <div className="week-card-body">
-                      <div className="week-card-header">
-                        <div>
-                          <h3>{event.title}</h3>
-                        </div>
-                        {event.statusRaw === "Published" ? (
-                          <button
-                            className="text-link"
-                            onClick={() => handleStartRegistration(event.id)}
-                          >
-                            {"\u5feb\u901f\u5831\u540d \u2192"}
-                          </button>
-                        ) : event.statusRaw === "Closed" ? (
-                          <span className="muted">{"\u5df2\u7d50\u675f"}</span>
-                        ) : (
-                          <span className="muted">{"\u5c1a\u672a\u958b\u653e"}</span>
-                        )}
-                      </div>
-                      <div className="week-meta">
-                        <span>分站：{event.location}</span>
-                        <span>時間：{event.date}</span>
-                        {event.description && <span>說明：{event.description}</span>}
-                        <span>名額：{event.capacity ?? "不限"}</span>
-                        <span>
-                          {"\u6211\u7684\u5831\u540d\u4eba\u6578\uFF1A"}
-                          {event.registrationCount}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="week-card-media">
-                      {event.posterUrl ? (
-                        <img src={event.posterUrl} alt={`${event.title} 海報`} />
-                      ) : (
-                        <div className="week-card-placeholder">
-                          <span>無海報</span>
-                        </div>
-                      )}
-                    </div>
-                  </article>
+                    event={event}
+                    onRegister={handleStartRegistration}
+                    style={{ "--delay": `${index * 0.08}s` }}
+                  />
                 ))
               ) : (
                 <div className="week-empty muted">目前尚無已發布的近期活動。</div>
               )}
             </div>
           </section>
+
+          <section className="section messages-section">
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">主日聚會信息</p>
+                <h2>每週信息摘要，立即觀看主日影音</h2>
+              </div>
+              <button
+                className="button outline small"
+                onClick={() => setActiveView("messages")}
+              >
+                更多
+              </button>
+            </div>
+            <div className="message-grid">
+              {homeSundayMessages.length ? (
+                homeSundayMessages.map((message, index) => (
+                  <article
+                    key={message.id}
+                    className="message-card"
+                    style={{ "--delay": `${index * 0.08}s` } as React.CSSProperties}
+                  >
+                    <div className="message-card-body">
+                      <div className="message-card-header">
+                        <h3>{message.title}</h3>
+                        {message.speaker && <span className="pill">{message.speaker}</span>}
+                      </div>
+                      <p className="muted">
+                        日期：{formatDateLabel(message.message_date)}
+                      </p>
+                      <p className="muted">
+                        分站：{resolveSiteName(message.site_id)}
+                      </p>
+                      {message.description && (
+                        <p className="message-description muted">{message.description}</p>
+                      )}
+                      <div className="message-actions">
+                        <a
+                          className="button outline small"
+                          href={message.youtube_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          觀看影片
+                        </a>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="week-empty muted">目前尚無主日聚會信息。</div>
+              )}
+            </div>
+          </section>
+
 
           <section className="section member-preview">
             <div className="panel preview-panel">
@@ -2110,7 +2054,123 @@ export default function App() {
         </>
       )}
 
-      {activeView === "events" && (
+      
+      {activeView === "messages" && (
+        <section className="section page-view">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">主日聚會信息</p>
+              <h2>記錄每週主日信息，讓信息講道不錯過</h2>
+            </div>
+          </div>
+          <div className="panel events-filters message-filters">
+            <div className="filter-bar">
+              <input
+                type="text"
+                placeholder="搜尋標題或講員"
+                value={sundayMessageQuery}
+                onChange={(event) => setSundayMessageQuery(event.target.value)}
+              />
+              <select
+                value={sundayMessageSite}
+                onChange={(event) => setSundayMessageSite(event.target.value)}
+              >
+                <option value="all">全部分站</option>
+                {sites
+                  .filter((site) => site.id !== "all")
+                  .map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.name}
+                    </option>
+                  ))}
+              </select>
+              <select
+                value={sundayMessageSortBy}
+                onChange={(event) => setSundayMessageSortBy(event.target.value)}
+              >
+                <option value="message_date">依日期</option>
+                <option value="created_at">依新增時間</option>
+                <option value="title">依標題</option>
+              </select>
+              <select
+                value={sundayMessageSortDir}
+                onChange={(event) => setSundayMessageSortDir(event.target.value)}
+              >
+                <option value="desc">新到舊</option>
+                <option value="asc">舊到新</option>
+              </select>
+              <select
+                value={sundayMessageLimit}
+                onChange={(event) => setSundayMessageLimit(Number(event.target.value))}
+              >
+                <option value={6}>6 筆</option>
+                <option value={12}>12 筆</option>
+                <option value={24}>24 筆</option>
+              </select>
+            </div>
+          </div>
+          <div className="message-grid message-list">
+            {sundayMessages.length ? (
+              sundayMessages.map((message, index) => (
+                <article
+                  key={message.id}
+                  className="message-card"
+                  style={{ "--delay": `${index * 0.06}s` } as React.CSSProperties}
+                >
+                  <div className="message-card-body">
+                    <div className="message-card-header">
+                      <h3>{message.title}</h3>
+                      {message.speaker && <span className="pill">{message.speaker}</span>}
+                    </div>
+                    <p className="muted">
+                      日期：{formatDateLabel(message.message_date)}
+                    </p>
+                    <p className="muted">
+                      分站：{resolveSiteName(message.site_id)}
+                    </p>
+                    {message.description && (
+                      <p className="message-description muted">{message.description}</p>
+                    )}
+                    <div className="message-actions">
+                      <a
+                        className="button outline small"
+                        href={message.youtube_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        觀看影片
+                      </a>
+                    </div>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="week-empty muted">尚無主日聚會信息。</div>
+            )}
+          </div>
+          <div className="pager">
+            <button
+              className="button outline small"
+              onClick={() =>
+                setSundayMessageOffset(Math.max(0, sundayMessageOffset - sundayMessageLimit))
+              }
+            >
+              上一頁
+            </button>
+            <span className="muted">
+              第 {Math.floor(sundayMessageOffset / sundayMessageLimit) + 1} 頁
+            </span>
+            <button
+              className="button outline small"
+              onClick={() => setSundayMessageOffset(sundayMessageOffset + sundayMessageLimit)}
+            >
+              下一頁
+            </button>
+          </div>
+        </section>
+      )}
+
+{activeView === "events" && (
         <section className="section page-view">
           <div className="section-header">
             <div>
@@ -2184,50 +2244,12 @@ export default function App() {
           <div className="events-list">
             <div className="week-grid">
               {eventsList.map((event, index) => (
-                <article
+                <EventCard
                   key={event.id}
-                  className="week-card"
+                  event={event}
+                  onRegister={handleStartRegistration}
                   style={{ "--delay": `${index * 0.05}s` } as React.CSSProperties}
-                >
-                  <div className="week-card-body">
-                    <div className="week-card-header">
-                      <div>
-                        <h3>{event.title}</h3>
-                      </div>
-                      {event.statusRaw === "Published" ? (
-                        <button
-                          className="text-link"
-                          onClick={() => handleStartRegistration(event.id)}
-                        >
-                          {"\u5feb\u901f\u5831\u540d \u2192"}
-                        </button>
-                      ) : event.statusRaw === "Closed" ? (
-                        <span className="muted">{"\u5df2\u7d50\u675f"}</span>
-                      ) : (
-                        <span className="muted">{"\u5c1a\u672a\u958b\u653e"}</span>
-                      )}
-                    </div>
-                    <div className="week-meta">
-                      <span>分站：{event.location}</span>
-                      <span>時間：{event.date}</span>
-                      {event.description && <span>說明：{event.description}</span>}
-                      <span>名額：{event.capacity ?? "不限"}</span>
-                      <span>
-                        {"\u6211\u7684\u5831\u540d\u4eba\u6578\uFF1A"}
-                        {event.registrationCount}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="week-card-media">
-                    {event.posterUrl ? (
-                      <img src={event.posterUrl} alt={`${event.title} 海報`} />
-                    ) : (
-                      <div className="week-card-placeholder">
-                        <span>無海報</span>
-                      </div>
-                    )}
-                  </div>
-                </article>
+                />
               ))}
             </div>
           </div>
@@ -2235,193 +2257,18 @@ export default function App() {
       )}
 
       {activeView === "registration" && (
-        <section className="section page-view">
-          <div className="section-header">
-            <div>
-              <p className="eyebrow">活動報名</p>
-              <h2>填寫報名資料</h2>
-            </div>
-            <button className="button outline small" onClick={() => setActiveView("events")}>
-              返回活動
-            </button>
-          </div>
-          {registrationEvent ? (
-            <div className="panel registration-panel">
-              <div className="registration-info">
-                <p className="eyebrow">活動資訊</p>
-                <h3>{registrationEvent.title}</h3>
-                <p className="muted">
-                  {"\u5206\u7ad9\uFF1A"}
-                  {resolveSiteName(registrationEvent.site_id)}
-                </p>
-                <p className="muted">
-                  {"\u6642\u9593\uFF1A"}
-                  {formatDateRange(registrationEvent.start_at, registrationEvent.end_at)}
-                </p>
-                {registrationEvent.description && (
-                  <p className="muted">
-                    {"\u8aaa\u660e\uFF1A"}
-                    {registrationEvent.description}
-                  </p>
-                )}
-                <p className="muted">
-                  {"\u540d\u984d\uFF1A"}
-                  {registrationEvent.capacity ?? "\u4e0d\u9650"}
-                </p>
-              </div>
-              <form className="registration-form" onSubmit={handleSubmitRegistration}>
-                <div className="form-section">
-                  <p className="eyebrow">報名人</p>
-                  <p className="muted">
-                    {"\u5e33\u865f\u59d3\u540d\uFF1A"}
-                    {currentUser?.full_name || currentUser?.email || "\u5c1a\u672a\u767b\u5165"}
-                  </p>
-                  <label className="field">
-                    {"\u4eba\u6578"}
-                    <input
-                      type="number"
-                      min={1}
-                      max={registrationEvent.capacity ?? undefined}
-                      value={registrationForm.ticketCount}
-                      onChange={(event) =>
-                        setRegistrationForm((prev) => ({
-                          ...prev,
-                          ticketCount: Math.max(1, Number(event.target.value || 1)),
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="checkbox">
-                    <input
-                      type="checkbox"
-                      checked={registrationForm.isProxy}
-                      onChange={(event) =>
-                        setRegistrationForm((prev) => ({
-                          ...prev,
-                          isProxy: event.target.checked,
-                        }))
-                      }
-                    />
-                    {"\u4ee3\u70ba\u5831\u540d"}
-                  </label>
-                </div>
-                {registrationForm.isProxy && (
-                  <div className="form-section">
-                    <p className="eyebrow">代為報名資訊</p>
-                    <div className="proxy-list">
-                      {registrationForm.proxyEntries.map((entry, index) => (
-                        <div className="proxy-card" key={`proxy-${index}`}>
-                          <div className="proxy-header">
-                            <span className="pill">{"\u4ee3\u5831\u5c0d\u8c61 "}{index + 1}</span>
-                            {registrationForm.proxyEntries.length > 1 && (
-                              <button
-                                type="button"
-                                className="button ghost small"
-                                onClick={() =>
-                                  setRegistrationForm((prev) => ({
-                                    ...prev,
-                                    proxyEntries: prev.proxyEntries.filter((_, idx) => idx !== index),
-                                  }))
-                                }
-                              >
-                                {"\u79fb\u9664"}
-                              </button>
-                            )}
-                          </div>
-                          <label className="field">
-                            {"\u59d3\u540d"}
-                            <input
-                              value={entry.name}
-                              onChange={(event) =>
-                                setRegistrationForm((prev) => ({
-                                  ...prev,
-                                  proxyEntries: prev.proxyEntries.map((item, idx) =>
-                                    idx === index ? { ...item, name: event.target.value } : item
-                                  ),
-                                }))
-                              }
-                              required
-                            />
-                          </label>
-                          <label className="field">
-                            {"\u96fb\u8a71\u0020(\u9078\u586b)"}
-                            <input
-                              value={entry.phone}
-                              onChange={(event) =>
-                                setRegistrationForm((prev) => ({
-                                  ...prev,
-                                  proxyEntries: prev.proxyEntries.map((item, idx) =>
-                                    idx === index ? { ...item, phone: event.target.value } : item
-                                  ),
-                                }))
-                              }
-                            />
-                          </label>
-                          <label className="field">
-                            {"\u95dc\u4fc2"}
-                            <select
-                              value={entry.relation}
-                              onChange={(event) =>
-                                setRegistrationForm((prev) => ({
-                                  ...prev,
-                                  proxyEntries: prev.proxyEntries.map((item, idx) =>
-                                    idx === index ? { ...item, relation: event.target.value } : item
-                                  ),
-                                }))
-                              }
-                              required
-                            >
-                              <option value="">{"\u8acb\u9078\u64c7"}</option>
-                              <option value="friend">{"\u670b\u53cb"}</option>
-                              <option value="family">{"\u5bb6\u4eba"}</option>
-                              <option value="other">{"\u5176\u4ed6"}</option>
-                            </select>
-                          </label>
-                          <label className="field">
-                            {"\u5099\u8a3b\u8aaa\u660e"}
-                            <textarea
-                              rows={3}
-                              value={entry.note}
-                              onChange={(event) =>
-                                setRegistrationForm((prev) => ({
-                                  ...prev,
-                                  proxyEntries: prev.proxyEntries.map((item, idx) =>
-                                    idx === index ? { ...item, note: event.target.value } : item
-                                  ),
-                                }))
-                              }
-                            />
-                          </label>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        className="button outline small"
-                        onClick={() =>
-                          setRegistrationForm((prev) => ({
-                            ...prev,
-                            proxyEntries: [
-                              ...prev.proxyEntries,
-                              { name: "", phone: "", relation: "", note: "" },
-                            ],
-                          }))
-                        }
-                      >
-                        {"\u65b0\u589e\u4ee3\u5831\u5c0d\u8c61"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <button className="button primary" type="submit" disabled={registrationSubmitting}>
-                  {registrationSubmitting ? "\u9001\u51fa\u4e2d..." : "\u9001\u51fa\u5831\u540d"}
-                </button>
-                {registrationMessage && <p className="muted">{registrationMessage}</p>}
-              </form>
-            </div>
-          ) : (
-            <div className="panel empty-panel">請先從活動列表選擇活動。</div>
-          )}
-        </section>
+        <RegistrationView
+          registrationEvent={registrationEvent}
+          currentUserLabel={currentUserLabel}
+          registrationForm={registrationForm}
+          setRegistrationForm={setRegistrationForm}
+          registrationMessage={registrationMessage}
+          registrationSubmitting={registrationSubmitting}
+          onSubmit={handleSubmitRegistration}
+          onBack={() => setActiveView("events")}
+          resolveSiteName={resolveSiteName}
+          formatDateRange={formatDateRange}
+        />
       )}
 
       {activeView === "prayers" && (
@@ -2813,6 +2660,13 @@ export default function App() {
             >
               活動管理
             </button>
+            <button
+              className={`tab-button ${adminTab === "messages" ? "active" : ""}`}
+              onClick={() => setAdminTab("messages")}
+            >
+              主日信息管理
+            </button>
+
           </div>
 
           {adminTab === "prayers" && (
@@ -2920,7 +2774,187 @@ export default function App() {
             </>
           )}
 
-          {adminTab === "events" && (
+          
+          {adminTab === "messages" && (
+            <div className="panel form-panel">
+              <div className="panel-header">
+                <h3>主日聚會信息管理</h3>
+                {sundayMessageEditingId && (
+                  <button
+                    className="button ghost small"
+                    onClick={() => {
+                      setSundayMessageEditingId(null);
+                      setSundayMessageForm({
+                        messageDate: getCurrentSundayDate(),
+                        title: "",
+                        speaker: "",
+                        youtubeUrl: "",
+                        description: "",
+                      });
+                    }}
+                  >
+                    取消編輯
+                  </button>
+                )}
+              </div>
+              <form className="form-grid" onSubmit={handleSubmitSundayMessage}>
+                <div>
+                  <label>分站</label>
+                  <select value={adminSundayMessageSiteId} disabled>
+                    {Object.values(siteUuidByCode).map((siteId) => (
+                      <option key={siteId} value={siteId}>
+                        {resolveSiteName(siteId)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label>主日日期</label>
+                  <input
+                    type="date"
+                    value={sundayMessageForm.messageDate}
+                    onChange={(event) =>
+                      setSundayMessageForm((prev) => ({
+                        ...prev,
+                        messageDate: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label>講員</label>
+                  <input
+                    type="text"
+                    value={sundayMessageForm.speaker}
+                    placeholder="選填"
+                    onChange={(event) =>
+                      setSundayMessageForm((prev) => ({
+                        ...prev,
+                        speaker: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field-full">
+                  <label>主日信息標題</label>
+                  <input
+                    type="text"
+                    value={sundayMessageForm.title}
+                    onChange={(event) =>
+                      setSundayMessageForm((prev) => ({
+                        ...prev,
+                        title: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div className="field-full">
+                  <label>YouTube 連結</label>
+                  <input
+                    type="url"
+                    value={sundayMessageForm.youtubeUrl}
+                    onChange={(event) =>
+                      setSundayMessageForm((prev) => ({
+                        ...prev,
+                        youtubeUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    required
+                  />
+                </div>
+                <div className="field-full">
+                  <label>信息簡介</label>
+                  <textarea
+                    value={sundayMessageForm.description}
+                    onChange={(event) =>
+                      setSundayMessageForm((prev) => ({
+                        ...prev,
+                        description: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="field-full button-row">
+                  <button className="button primary" type="submit">
+                    {sundayMessageEditingId ? "更新信息" : "新增信息"}
+                  </button>
+                </div>
+              </form>
+              {sundayMessageMessage && <p className="muted">{sundayMessageMessage}</p>}
+              <div className="weekly-verse-list message-admin-list">
+                {adminSundayMessages.length ? (
+                  adminSundayMessages.map((item) => (
+                    <div key={item.id} className="weekly-verse-item message-admin-item">
+                      <div>
+                        <h4>{item.title}</h4>
+                        <p className="muted">
+                          主日：{formatDateLabel(item.message_date)}
+                        </p>
+                        <p className="muted">
+                          分站：{resolveSiteName(item.site_id)}
+                        </p>
+                        {item.speaker && (
+                          <p className="muted">講員：{item.speaker}</p>
+                        )}
+                        <a
+                          className="muted message-link"
+                          href={item.youtube_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {item.youtube_url}
+                        </a>
+                      </div>
+                      <div className="button-row">
+                        <button
+                          className="button ghost small"
+                          onClick={() => handleEditSundayMessage(item)}
+                        >
+                          編輯
+                        </button>
+                        <button
+                          className="button ghost small"
+                          onClick={() => handleDeleteSundayMessage(item.id)}
+                        >
+                          刪除
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted">尚無主日信息紀錄。</p>
+                )}
+              </div>
+              <div className="pager">
+                <button
+                  className="button outline small"
+                  onClick={() =>
+                    setAdminSundayMessageOffset(
+                      Math.max(0, adminSundayMessageOffset - adminSundayMessageLimit)
+                    )
+                  }
+                >
+                  上一頁
+                </button>
+                <span className="muted">
+                  第 {Math.floor(adminSundayMessageOffset / adminSundayMessageLimit) + 1} 頁
+                </span>
+                <button
+                  className="button outline small"
+                  onClick={() =>
+                    setAdminSundayMessageOffset(adminSundayMessageOffset + adminSundayMessageLimit)
+                  }
+                >
+                  下一頁
+                </button>
+              </div>
+            </div>
+          )}
+
+{adminTab === "events" && (
             <div className="panel form-panel">
               <div className="panel-header">
                 <h3>活動管理</h3>
