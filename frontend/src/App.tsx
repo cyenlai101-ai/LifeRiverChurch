@@ -95,6 +95,15 @@ type AdminUserItem = {
   created_at: string;
 };
 
+type RegistrationItem = {
+  id: string;
+  event_id: string;
+  ticket_count: number;
+  status: string;
+};
+
+type ActiveView = "home" | "member" | "events" | "prayers" | "care" | "admin" | "registration";
+
 const sites: SiteTheme[] = [
   {
     id: "all",
@@ -234,6 +243,7 @@ export default function App() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [eventsData, setEventsData] = useState<EventItem[] | null>(null);
+  const [registrationsData, setRegistrationsData] = useState<RegistrationItem[] | null>(null);
   const [prayersData, setPrayersData] = useState<PrayerItem[] | null>(null);
   const [careData, setCareData] = useState<CareSubjectItem[] | null>(null);
   const [weeklyVerse, setWeeklyVerse] = useState<WeeklyVerse | null>(null);
@@ -252,7 +262,7 @@ export default function App() {
   const [eventSite, setEventSite] = useState("");
   const [eventUpcomingOnly, setEventUpcomingOnly] = useState(false);
   const [eventSortBy, setEventSortBy] = useState("start_at");
-  const [eventSortDir, setEventSortDir] = useState("asc");
+  const [eventSortDir, setEventSortDir] = useState("desc");
   const [eventLimit, setEventLimit] = useState(50);
   const [eventOffset, setEventOffset] = useState(0);
   const [eventForm, setEventForm] = useState({
@@ -337,9 +347,19 @@ export default function App() {
     newPassword: "",
   });
   const [mobilePreview, setMobilePreview] = useState(false);
-  const [activeView, setActiveView] = useState<
-    "home" | "member" | "events" | "prayers" | "care" | "admin"
-  >("home");
+  const [activeView, setActiveView] = useState<ActiveView>("home");
+  const [postLoginAction, setPostLoginAction] = useState<{ view: ActiveView } | null>(null);
+  const [pendingRegistrationEvent, setPendingRegistrationEvent] = useState<EventItem | null>(null);
+  const [registrationEvent, setRegistrationEvent] = useState<EventItem | null>(null);
+  const [registrationForm, setRegistrationForm] = useState({
+    ticketCount: 1,
+    isProxy: false,
+    proxyEntries: [
+      { name: "", phone: "", relation: "", note: "" },
+    ],
+  });
+  const [registrationMessage, setRegistrationMessage] = useState("");
+  const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const activeSite = useMemo(
     () => sites.find((site) => site.id === activeSiteId) || sites[0],
     [activeSiteId]
@@ -375,34 +395,58 @@ export default function App() {
     Published: "已發布",
     Closed: "已結束",
   };
+  const registrationCountByEvent = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (!registrationsData) {
+      return counts;
+    }
+    registrationsData.forEach((item) => {
+      if (!item.event_id) {
+        return;
+      }
+      counts[item.event_id] = (counts[item.event_id] || 0) + (item.ticket_count || 0);
+    });
+    return counts;
+  }, [registrationsData]);
   const weekEventItems =
     homeEvents && homeEvents.length
       ? homeEvents
           .filter((event) => event.status !== "Draft")
-          .map((event) => ({
+          .map((event) => {
+            const effectiveStatus = resolveEventStatus(event);
+            return {
+              id: event.id,
+              title: event.title,
+              date: formatDateRange(event.start_at, event.end_at),
+              location: resolveSiteName(event.site_id),
+              description: event.description || "",
+              capacity: event.capacity,
+              status: eventStatusLabelMap[effectiveStatus] || effectiveStatus,
+              statusRaw: effectiveStatus,
+              registrationCount: registrationCountByEvent[event.id] || 0,
+              registered: (registrationCountByEvent[event.id] || 0) > 0,
+              posterUrl: resolvePosterUrl(event.poster_url),
+            };
+          })
+      : [];
+  const eventsList =
+    eventsData && eventsData.length
+      ? eventsData.map((event) => {
+          const effectiveStatus = resolveEventStatus(event);
+          return {
             id: event.id,
             title: event.title,
             date: formatDateRange(event.start_at, event.end_at),
             location: resolveSiteName(event.site_id),
             description: event.description || "",
             capacity: event.capacity,
-            status: eventStatusLabelMap[event.status] || event.status,
+            status: eventStatusLabelMap[effectiveStatus] || effectiveStatus,
+            statusRaw: effectiveStatus,
+            registrationCount: registrationCountByEvent[event.id] || 0,
+            registered: (registrationCountByEvent[event.id] || 0) > 0,
             posterUrl: resolvePosterUrl(event.poster_url),
-          }))
-      : [];
-  const eventsList =
-    eventsData && eventsData.length
-      ? eventsData.map((event) => ({
-          id: event.id,
-          title: event.title,
-          date: formatDateRange(event.start_at, event.end_at),
-          location: resolveSiteName(event.site_id),
-          description: event.description || "",
-          capacity: event.capacity,
-          status: eventStatusLabelMap[event.status] || event.status,
-          statusRaw: event.status,
-          posterUrl: resolvePosterUrl(event.poster_url),
-        }))
+          };
+        })
       : [];
   const eventsAdminList =
     eventsData && eventsData.length
@@ -496,6 +540,16 @@ export default function App() {
       setSummary(null);
       setCurrentUser(null);
       setActiveView("home");
+      setPostLoginAction(null);
+      setPendingRegistrationEvent(null);
+      setRegistrationEvent(null);
+      setRegistrationForm({
+        ticketCount: 1,
+        isProxy: false,
+        proxyEntries: [{ name: "", phone: "", relation: "", note: "" }],
+      });
+      setRegistrationMessage("");
+      setRegistrationsData(null);
       return;
     }
     apiGet<DashboardSummary>("/dashboard/summary", token)
@@ -504,6 +558,16 @@ export default function App() {
         setLoginMessage(error?.message || "取得會員資料失敗");
         setSummary(null);
       });
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) {
+      setRegistrationsData(null);
+      return;
+    }
+    apiGet<RegistrationItem[]>("/registrations", token)
+      .then((data) => setRegistrationsData(data))
+      .catch(() => setRegistrationsData([]));
   }, [token]);
 
   useEffect(() => {
@@ -747,6 +811,7 @@ export default function App() {
     setAdminMessage("");
     setAdminUserMessage("");
     setSelectedUser(null);
+    setRegistrationMessage("");
   }, [activeView]);
 
   useEffect(() => {
@@ -761,6 +826,71 @@ export default function App() {
     adminUserLimit,
   ]);
 
+  const handleStartRegistration = (eventId: string) => {
+    const match = eventsData?.find((item) => item.id === eventId) || null;
+    if (!match) {
+      setViewMessage("找不到活動資料");
+      return;
+    }
+    setViewMessage("");
+    if (!token) {
+      setPendingRegistrationEvent(match);
+      setPostLoginAction({ view: "registration" });
+      setAuthMode("login");
+      setIsLoginOpen(true);
+      return;
+    }
+    setRegistrationEvent(match);
+    setRegistrationMessage("");
+    setActiveView("registration");
+  };
+
+  const handleSubmitRegistration = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!token) {
+      if (registrationEvent) {
+        setPendingRegistrationEvent(registrationEvent);
+      }
+      setPostLoginAction({ view: "registration" });
+      setAuthMode("login");
+      setIsLoginOpen(true);
+      return;
+    }
+    if (!registrationEvent) {
+      setRegistrationMessage("請先選擇活動");
+      return;
+    }
+    setRegistrationSubmitting(true);
+    setRegistrationMessage("");
+    try {
+      const firstProxy = registrationForm.proxyEntries[0];
+      await apiPost(
+        "/registrations",
+        {
+          event_id: registrationEvent.id,
+          ticket_count: registrationForm.ticketCount,
+          is_proxy: registrationForm.isProxy,
+          proxy_name: registrationForm.isProxy ? firstProxy?.name : null,
+          proxy_phone: registrationForm.isProxy ? firstProxy?.phone : null,
+          proxy_relation: registrationForm.isProxy ? firstProxy?.relation : null,
+          proxy_note: registrationForm.isProxy ? firstProxy?.note : null,
+          proxy_entries: registrationForm.isProxy ? registrationForm.proxyEntries : [],
+        },
+        token
+      );
+      setRegistrationMessage("報名完成");
+      setRegistrationForm({
+        ticketCount: 1,
+        isProxy: false,
+        proxyEntries: [{ name: "", phone: "", relation: "", note: "" }],
+      });
+    } catch (error: any) {
+      setRegistrationMessage(error?.message || "報名失敗");
+    } finally {
+      setRegistrationSubmitting(false);
+    }
+  };
+
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoginMessage("");
@@ -769,11 +899,21 @@ export default function App() {
         email: loginEmail,
         password: loginPassword,
       });
+      const nextAction = postLoginAction;
       setToken(data.access_token);
       setIsLoginOpen(false);
       setLoginPassword("");
       setLoginMessage("登入成功");
-      setActiveView("member");
+      setPostLoginAction(null);
+      if (nextAction?.view) {
+        if (nextAction.view === "registration" && pendingRegistrationEvent) {
+          setRegistrationEvent(pendingRegistrationEvent);
+          setPendingRegistrationEvent(null);
+        }
+        setActiveView(nextAction.view);
+      } else {
+        setActiveView("member");
+      }
       apiGet<UserProfile>("/auth/me", data.access_token)
         .then((profile) => setCurrentUser(profile))
         .catch((error) => {
@@ -810,6 +950,15 @@ export default function App() {
     setLoginPassword("");
     setLoginMessage("已登出");
     setActiveView("home");
+    setPostLoginAction(null);
+    setPendingRegistrationEvent(null);
+    setRegistrationEvent(null);
+    setRegistrationForm({
+      ticketCount: 1,
+      isProxy: false,
+      proxyEntries: [{ name: "", phone: "", relation: "", note: "" }],
+    });
+    setRegistrationMessage("");
     setEventsData(null);
     setPrayersData(null);
     setCareData(null);
@@ -1314,6 +1463,19 @@ export default function App() {
     return `${startLabel} - ${endLabel}`;
   }
 
+  function resolveEventStatus(event: EventItem): EventItem["status"] {
+    if (event.status === "Draft") {
+      return "Draft";
+    }
+    if (event.end_at) {
+      const end = new Date(event.end_at);
+      if (Number.isFinite(end.getTime()) && end.getTime() < Date.now()) {
+        return "Closed";
+      }
+    }
+    return event.status;
+  }
+
   function formatWeekStartDate(value?: string | null) {
     if (!value) {
       return "";
@@ -1799,16 +1961,30 @@ export default function App() {
                     <div className="week-card-body">
                       <div className="week-card-header">
                         <div>
-                          <span className="pill">{event.status}</span>
                           <h3>{event.title}</h3>
                         </div>
-                        <button className="text-link">快速報名 →</button>
+                        {event.statusRaw === "Published" ? (
+                          <button
+                            className="text-link"
+                            onClick={() => handleStartRegistration(event.id)}
+                          >
+                            {"\u5feb\u901f\u5831\u540d \u2192"}
+                          </button>
+                        ) : event.statusRaw === "Closed" ? (
+                          <span className="muted">{"\u5df2\u7d50\u675f"}</span>
+                        ) : (
+                          <span className="muted">{"\u5c1a\u672a\u958b\u653e"}</span>
+                        )}
                       </div>
                       <div className="week-meta">
                         <span>分站：{event.location}</span>
                         <span>時間：{event.date}</span>
                         {event.description && <span>說明：{event.description}</span>}
                         <span>名額：{event.capacity ?? "不限"}</span>
+                        <span>
+                          {"\u6211\u7684\u5831\u540d\u4eba\u6578\uFF1A"}
+                          {event.registrationCount}
+                        </span>
                       </div>
                     </div>
                     <div className="week-card-media">
@@ -2016,16 +2192,30 @@ export default function App() {
                   <div className="week-card-body">
                     <div className="week-card-header">
                       <div>
-                        <span className="pill">{event.status}</span>
                         <h3>{event.title}</h3>
                       </div>
-                      <button className="text-link">報名詳情 →</button>
+                      {event.statusRaw === "Published" ? (
+                        <button
+                          className="text-link"
+                          onClick={() => handleStartRegistration(event.id)}
+                        >
+                          {"\u5feb\u901f\u5831\u540d \u2192"}
+                        </button>
+                      ) : event.statusRaw === "Closed" ? (
+                        <span className="muted">{"\u5df2\u7d50\u675f"}</span>
+                      ) : (
+                        <span className="muted">{"\u5c1a\u672a\u958b\u653e"}</span>
+                      )}
                     </div>
                     <div className="week-meta">
                       <span>分站：{event.location}</span>
                       <span>時間：{event.date}</span>
                       {event.description && <span>說明：{event.description}</span>}
                       <span>名額：{event.capacity ?? "不限"}</span>
+                      <span>
+                        {"\u6211\u7684\u5831\u540d\u4eba\u6578\uFF1A"}
+                        {event.registrationCount}
+                      </span>
                     </div>
                   </div>
                   <div className="week-card-media">
@@ -2041,6 +2231,196 @@ export default function App() {
               ))}
             </div>
           </div>
+        </section>
+      )}
+
+      {activeView === "registration" && (
+        <section className="section page-view">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">活動報名</p>
+              <h2>填寫報名資料</h2>
+            </div>
+            <button className="button outline small" onClick={() => setActiveView("events")}>
+              返回活動
+            </button>
+          </div>
+          {registrationEvent ? (
+            <div className="panel registration-panel">
+              <div className="registration-info">
+                <p className="eyebrow">活動資訊</p>
+                <h3>{registrationEvent.title}</h3>
+                <p className="muted">
+                  {"\u5206\u7ad9\uFF1A"}
+                  {resolveSiteName(registrationEvent.site_id)}
+                </p>
+                <p className="muted">
+                  {"\u6642\u9593\uFF1A"}
+                  {formatDateRange(registrationEvent.start_at, registrationEvent.end_at)}
+                </p>
+                {registrationEvent.description && (
+                  <p className="muted">
+                    {"\u8aaa\u660e\uFF1A"}
+                    {registrationEvent.description}
+                  </p>
+                )}
+                <p className="muted">
+                  {"\u540d\u984d\uFF1A"}
+                  {registrationEvent.capacity ?? "\u4e0d\u9650"}
+                </p>
+              </div>
+              <form className="registration-form" onSubmit={handleSubmitRegistration}>
+                <div className="form-section">
+                  <p className="eyebrow">報名人</p>
+                  <p className="muted">
+                    {"\u5e33\u865f\u59d3\u540d\uFF1A"}
+                    {currentUser?.full_name || currentUser?.email || "\u5c1a\u672a\u767b\u5165"}
+                  </p>
+                  <label className="field">
+                    {"\u4eba\u6578"}
+                    <input
+                      type="number"
+                      min={1}
+                      max={registrationEvent.capacity ?? undefined}
+                      value={registrationForm.ticketCount}
+                      onChange={(event) =>
+                        setRegistrationForm((prev) => ({
+                          ...prev,
+                          ticketCount: Math.max(1, Number(event.target.value || 1)),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={registrationForm.isProxy}
+                      onChange={(event) =>
+                        setRegistrationForm((prev) => ({
+                          ...prev,
+                          isProxy: event.target.checked,
+                        }))
+                      }
+                    />
+                    {"\u4ee3\u70ba\u5831\u540d"}
+                  </label>
+                </div>
+                {registrationForm.isProxy && (
+                  <div className="form-section">
+                    <p className="eyebrow">代為報名資訊</p>
+                    <div className="proxy-list">
+                      {registrationForm.proxyEntries.map((entry, index) => (
+                        <div className="proxy-card" key={`proxy-${index}`}>
+                          <div className="proxy-header">
+                            <span className="pill">{"\u4ee3\u5831\u5c0d\u8c61 "}{index + 1}</span>
+                            {registrationForm.proxyEntries.length > 1 && (
+                              <button
+                                type="button"
+                                className="button ghost small"
+                                onClick={() =>
+                                  setRegistrationForm((prev) => ({
+                                    ...prev,
+                                    proxyEntries: prev.proxyEntries.filter((_, idx) => idx !== index),
+                                  }))
+                                }
+                              >
+                                {"\u79fb\u9664"}
+                              </button>
+                            )}
+                          </div>
+                          <label className="field">
+                            {"\u59d3\u540d"}
+                            <input
+                              value={entry.name}
+                              onChange={(event) =>
+                                setRegistrationForm((prev) => ({
+                                  ...prev,
+                                  proxyEntries: prev.proxyEntries.map((item, idx) =>
+                                    idx === index ? { ...item, name: event.target.value } : item
+                                  ),
+                                }))
+                              }
+                              required
+                            />
+                          </label>
+                          <label className="field">
+                            {"\u96fb\u8a71\u0020(\u9078\u586b)"}
+                            <input
+                              value={entry.phone}
+                              onChange={(event) =>
+                                setRegistrationForm((prev) => ({
+                                  ...prev,
+                                  proxyEntries: prev.proxyEntries.map((item, idx) =>
+                                    idx === index ? { ...item, phone: event.target.value } : item
+                                  ),
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            {"\u95dc\u4fc2"}
+                            <select
+                              value={entry.relation}
+                              onChange={(event) =>
+                                setRegistrationForm((prev) => ({
+                                  ...prev,
+                                  proxyEntries: prev.proxyEntries.map((item, idx) =>
+                                    idx === index ? { ...item, relation: event.target.value } : item
+                                  ),
+                                }))
+                              }
+                              required
+                            >
+                              <option value="">{"\u8acb\u9078\u64c7"}</option>
+                              <option value="friend">{"\u670b\u53cb"}</option>
+                              <option value="family">{"\u5bb6\u4eba"}</option>
+                              <option value="other">{"\u5176\u4ed6"}</option>
+                            </select>
+                          </label>
+                          <label className="field">
+                            {"\u5099\u8a3b\u8aaa\u660e"}
+                            <textarea
+                              rows={3}
+                              value={entry.note}
+                              onChange={(event) =>
+                                setRegistrationForm((prev) => ({
+                                  ...prev,
+                                  proxyEntries: prev.proxyEntries.map((item, idx) =>
+                                    idx === index ? { ...item, note: event.target.value } : item
+                                  ),
+                                }))
+                              }
+                            />
+                          </label>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="button outline small"
+                        onClick={() =>
+                          setRegistrationForm((prev) => ({
+                            ...prev,
+                            proxyEntries: [
+                              ...prev.proxyEntries,
+                              { name: "", phone: "", relation: "", note: "" },
+                            ],
+                          }))
+                        }
+                      >
+                        {"\u65b0\u589e\u4ee3\u5831\u5c0d\u8c61"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <button className="button primary" type="submit" disabled={registrationSubmitting}>
+                  {registrationSubmitting ? "\u9001\u51fa\u4e2d..." : "\u9001\u51fa\u5831\u540d"}
+                </button>
+                {registrationMessage && <p className="muted">{registrationMessage}</p>}
+              </form>
+            </div>
+          ) : (
+            <div className="panel empty-panel">請先從活動列表選擇活動。</div>
+          )}
         </section>
       )}
 
