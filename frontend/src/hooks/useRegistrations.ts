@@ -7,6 +7,15 @@ type RegistrationItem = {
   event_id: string;
   ticket_count: number;
   status: string;
+  is_proxy: boolean;
+  proxy_entries?: {
+    name: string;
+    phone?: string | null;
+    relation?: string | null;
+    note?: string | null;
+  }[];
+  created_at: string;
+  updated_at?: string | null;
 };
 
 export default function useRegistrations(token: string | null) {
@@ -31,7 +40,9 @@ export default function useRegistrations(token: string | null) {
       if (!item.event_id) {
         return;
       }
-      counts[item.event_id] = (counts[item.event_id] || 0) + (item.ticket_count || 0);
+      const proxyCount = item.proxy_entries ? item.proxy_entries.length : 0;
+      const effectiveCount = item.is_proxy ? proxyCount + 1 : item.ticket_count || 1;
+      counts[item.event_id] = (counts[item.event_id] || 0) + effectiveCount;
     });
     return counts;
   }, [registrationsData]);

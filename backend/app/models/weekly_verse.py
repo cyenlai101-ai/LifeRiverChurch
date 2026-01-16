@@ -16,4 +16,5 @@ class WeeklyVerse(Base):
     week_start = Column(Date, nullable=False)
     text = Column(String, nullable=False)
     reference = Column(String, nullable=False)
+    reading_plan = Column(String)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -10,6 +10,7 @@ class WeeklyVerseBase(BaseModel):
     week_start: date
     text: str
     reference: str
+    reading_plan: Optional[str] = None
 
 
 class WeeklyVerseCreate(WeeklyVerseBase):
@@ -20,6 +21,7 @@ class WeeklyVerseUpdate(BaseModel):
     week_start: Optional[date] = None
     text: Optional[str] = None
     reference: Optional[str] = None
+    reading_plan: Optional[str] = None
 
 
 class WeeklyVerseOut(WeeklyVerseBase):

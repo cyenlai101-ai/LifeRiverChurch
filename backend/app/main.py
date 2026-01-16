@@ -4,7 +4,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import auth, care, dashboard, events, health, prayers, registrations, admin_users, weekly_verse, sunday_messages
+from app.api.routes import (
+    admin_users,
+    auth,
+    care,
+    dashboard,
+    events,
+    health,
+    life_bulletins,
+    prayers,
+    registrations,
+    sunday_messages,
+    weekly_verse,
+)
 import app.models  # noqa: F401
 from app.core.config import settings
 
@@ -33,3 +45,4 @@ app.include_router(care.router)
 app.include_router(admin_users.router)
 app.include_router(weekly_verse.router)
 app.include_router(sunday_messages.router)
+app.include_router(life_bulletins.router)

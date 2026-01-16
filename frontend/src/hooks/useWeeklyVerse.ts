@@ -9,6 +9,7 @@ type WeeklyVerse = {
   week_start: string;
   text: string;
   reference: string;
+  reading_plan?: string | null;
   updated_at: string;
 };
 
@@ -17,12 +18,14 @@ type WeeklyVerseFormState = {
   weekStart: string;
   text: string;
   reference: string;
+  readingPlan: string;
 };
 
 type UseWeeklyVerseOptions = {
   activeView: string;
   homeSiteId?: string | null;
   weeklyVerseSiteId?: string | null;
+  token?: string | null;
   weeklyVerseForm: WeeklyVerseFormState;
   setWeeklyVerseForm: React.Dispatch<React.SetStateAction<WeeklyVerseFormState>>;
   setWeeklyVerseMessage: (message: string) => void;
@@ -32,6 +35,7 @@ export default function useWeeklyVerse({
   activeView,
   homeSiteId,
   weeklyVerseSiteId,
+  token,
   weeklyVerseForm,
   setWeeklyVerseForm,
   setWeeklyVerseMessage,
@@ -68,6 +72,7 @@ export default function useWeeklyVerse({
       weekStart: weeklyVerse.week_start,
       text: weeklyVerse.text,
       reference: weeklyVerse.reference,
+      readingPlan: weeklyVerse.reading_plan || "",
     }));
   }, [weeklyVerse, setWeeklyVerseForm]);
 
@@ -79,10 +84,10 @@ export default function useWeeklyVerse({
       setWeeklyVerse(null);
       return;
     }
-    apiGet<WeeklyVerse[]>(`/weekly-verse?site_id=${weeklyVerseSiteId}`)
+    apiGet<WeeklyVerse[]>(`/weekly-verse?site_id=${weeklyVerseSiteId}`, token || undefined)
       .then((data) => setWeeklyVerseList(data))
       .catch(() => setWeeklyVerseList([]));
-  }, [activeView, weeklyVerseSiteId]);
+  }, [activeView, weeklyVerseSiteId, token]);
 
   useEffect(() => {
     setWeeklyVerseMessage("");

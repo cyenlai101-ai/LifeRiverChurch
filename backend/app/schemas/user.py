@@ -19,6 +19,7 @@ class UserOut(BaseModel):
   phone: Optional[str] = None
   role: UserRole
   member_type: MemberType
+  site_id: Optional[UUID] = None
 
 
 class UserUpdate(BaseModel):

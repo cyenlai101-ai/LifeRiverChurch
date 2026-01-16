@@ -59,6 +59,7 @@ def create_weekly_verse(db: Session, payload: WeeklyVerseCreate) -> WeeklyVerse:
         week_start=payload.week_start,
         text=payload.text,
         reference=payload.reference,
+        reading_plan=payload.reading_plan,
     )
     db.add(record)
     db.commit()
@@ -83,6 +84,8 @@ def update_weekly_verse(
         record.text = payload.text
     if payload.reference is not None:
         record.reference = payload.reference
+    if payload.reading_plan is not None:
+        record.reading_plan = payload.reading_plan
     db.commit()
     db.refresh(record)
     return record

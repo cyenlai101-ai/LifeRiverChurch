@@ -55,6 +55,7 @@ create table if not exists public.weekly_verses (
   week_start date not null,
   text text not null,
   reference text not null,
+  reading_plan text,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -72,8 +73,26 @@ create table if not exists public.sunday_messages (
 create index if not exists sunday_messages_site_date_idx
   on public.sunday_messages (site_id, message_date desc);
 
+create table if not exists public.life_bulletins (
+  id uuid default uuid_generate_v4() primary key,
+  site_id uuid not null references public.sites(id),
+  bulletin_date date not null,
+  content text not null,
+  video_url text,
+  status life_bulletin_status default 'Draft'::life_bulletin_status not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create index if not exists life_bulletins_site_date_idx
+  on public.life_bulletins (site_id, bulletin_date desc);
+
+
 alter table if exists public.weekly_verses
   add column if not exists week_start date;
+
+alter table if exists public.weekly_verses
+  add column if not exists reading_plan text;
 
 update public.weekly_verses
   set week_start = current_date - (extract(dow from current_date)::int)
@@ -106,6 +125,9 @@ begin
   if not exists (select 1 from pg_type where typname = 'care_subject_status') then
     create type public.care_subject_status as enum ('Active', 'Paused', 'Closed');
   end if;
+  if not exists (select 1 from pg_type where typname = 'life_bulletin_status') then
+    create type public.life_bulletin_status as enum ('Draft', 'Published');
+  end if;
 end $$;
 
 create table if not exists public.events (
@@ -130,8 +152,23 @@ create table if not exists public.event_registrations (
   status registration_status default 'Pending'::registration_status not null,
   ticket_count integer default 1 not null,
   is_proxy boolean default false not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  proxy_entries jsonb default '[]'::jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+alter table if exists public.event_registrations
+  add column if not exists proxy_entries jsonb default '[]'::jsonb;
+
+update public.event_registrations
+  set proxy_entries = '[]'::jsonb
+  where proxy_entries is null;
+
+alter table if exists public.event_registrations
+  add column if not exists updated_at timestamp with time zone default timezone('utc'::text, now()) not null;
+
+create unique index if not exists event_registrations_user_event_key
+  on public.event_registrations (user_id, event_id);
 
 create table if not exists public.prayer_requests (
   id uuid default uuid_generate_v4() primary key,

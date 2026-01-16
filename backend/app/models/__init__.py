@@ -3,6 +3,7 @@
 from app.models.care import CareLog, CareSubject  # noqa: F401
 from app.models.dashboard import DashboardSummary  # noqa: F401
 from app.models.weekly_verse import WeeklyVerse  # noqa: F401
+from app.models.life_bulletin import LifeBulletin  # noqa: F401
 from app.models.event import Event  # noqa: F401
 from app.models.prayer import PrayerRequest  # noqa: F401
 from app.models.registration import EventRegistration  # noqa: F401

@@ -30,7 +30,7 @@ export default function EventCard({ event, onRegister, className, style }: Event
             <h3>{event.title}</h3>
           </div>
           {event.statusRaw === "Published" ? (
-            <button className="text-link" onClick={() => onRegister(event.id)}>
+            <button className="text-link" type="button" onClick={(eventClick) => { eventClick.stopPropagation(); onRegister(event.id); }}>
               {"\u5feb\u901f\u5831\u540d \u2192"}
             </button>
           ) : event.statusRaw === "Closed" ? (

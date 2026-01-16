@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   API_BASE_URL,
   apiDelete,
@@ -63,6 +63,7 @@ type WeeklyVerse = {
   week_start: string;
   text: string;
   reference: string;
+  reading_plan?: string | null;
   updated_at: string;
 };
 
@@ -75,6 +76,17 @@ type SundayMessage = {
   youtube_url: string;
   description?: string | null;
   created_at: string;
+};
+
+type LifeBulletin = {
+  id: string;
+  site_id: string;
+  bulletin_date: string;
+  content: string;
+  video_url: string | null;
+  status: "Draft" | "Published";
+  created_at: string;
+  updated_at: string;
 };
 
 type UserProfile = {
@@ -98,6 +110,47 @@ type EventItem = {
   waitlist_enabled: boolean;
   status: "Draft" | "Published" | "Closed";
   site_id?: string | null;
+};
+
+type RegistrationItem = {
+  id: string;
+  event_id: string;
+  ticket_count: number;
+  status: string;
+  is_proxy: boolean;
+  proxy_entries?: {
+    name: string;
+    phone?: string | null;
+    relation?: string | null;
+    note?: string | null;
+  }[];
+  created_at: string;
+  updated_at?: string | null;
+};
+
+type AdminRegistrationItem = {
+  id: string;
+  event_id: string;
+  event_title: string;
+  event_site_id: string;
+  event_start_at: string;
+  user_id?: string | null;
+  user_email?: string | null;
+  user_full_name?: string | null;
+  user_phone?: string | null;
+  user_member_type?: string | null;
+  user_role?: string | null;
+  status: string;
+  ticket_count: number;
+  is_proxy: boolean;
+  proxy_entries?: {
+    name: string;
+    phone?: string | null;
+    relation?: string | null;
+    note?: string | null;
+  }[];
+  created_at: string;
+  updated_at?: string | null;
 };
 
 type PrayerItem = {
@@ -135,7 +188,8 @@ type ActiveView =
   | "care"
   | "admin"
   | "registration"
-  | "messages";
+  | "messages"
+  | "life-bulletins";
 
 const sites: SiteTheme[] = [
   {
@@ -210,12 +264,6 @@ const ministries = [
   },
 ];
 
-const quickActions = [
-  "快速奉獻",
-  "活動報名",
-  "提報代禱",
-  "更新個人資料",
-];
 
 const recentActivities = [
   "10/02 已完成「城市復興特會」報名",
@@ -248,7 +296,7 @@ const careSubjects = [
 ];
 
 export default function App() {
-  const [activeSiteId, setActiveSiteId] = useState("all");
+  const [activeSiteId, setActiveSiteId] = useState("guangfu");
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [loginEmail, setLoginEmail] = useState("");
@@ -267,9 +315,12 @@ export default function App() {
     weekStart: "",
     text: "",
     reference: "",
+    readingPlan: "",
   });
   const [weeklyVerseMessage, setWeeklyVerseMessage] = useState("");
+  const [homeWeeklyVerses, setHomeWeeklyVerses] = useState<WeeklyVerse[]>([]);
   const [homeSundayMessages, setHomeSundayMessages] = useState<SundayMessage[]>([]);
+  const [homeLifeBulletins, setHomeLifeBulletins] = useState<LifeBulletin[]>([]);
   const [sundayMessages, setSundayMessages] = useState<SundayMessage[]>([]);
   const [sundayMessageQuery, setSundayMessageQuery] = useState("");
   const [sundayMessageSite, setSundayMessageSite] = useState("all");
@@ -289,6 +340,33 @@ export default function App() {
     description: "",
   });
   const [sundayMessageMessage, setSundayMessageMessage] = useState("");
+  const [lifeBulletins, setLifeBulletins] = useState<LifeBulletin[]>([]);
+  const [lifeBulletinQuery, setLifeBulletinQuery] = useState("");
+  const [lifeBulletinStatus, setLifeBulletinStatus] = useState("");
+  const [lifeBulletinSortBy, setLifeBulletinSortBy] = useState("bulletin_date");
+  const [lifeBulletinSortDir, setLifeBulletinSortDir] = useState("desc");
+  const [lifeBulletinLimit, setLifeBulletinLimit] = useState(10);
+  const [lifeBulletinOffset, setLifeBulletinOffset] = useState(0);
+  const [lifeBulletinEditingId, setLifeBulletinEditingId] = useState<string | null>(null);
+  const [lifeBulletinForm, setLifeBulletinForm] = useState({
+    bulletinDate: "",
+    content: "",
+    videoUrl: "",
+    status: "Draft",
+  });
+  const [lifeBulletinMessage, setLifeBulletinMessage] = useState("");
+  const [lifeBulletinVideoFile, setLifeBulletinVideoFile] = useState<File | null>(null);
+  const [lifeBulletinPublic, setLifeBulletinPublic] = useState<LifeBulletin[]>([]);
+  const [lifeBulletinPublicQuery, setLifeBulletinPublicQuery] = useState("");
+  const [lifeBulletinPublicSite, setLifeBulletinPublicSite] = useState("all");
+  const [lifeBulletinPublicSortBy, setLifeBulletinPublicSortBy] = useState("bulletin_date");
+  const [lifeBulletinPublicSortDir, setLifeBulletinPublicSortDir] = useState("desc");
+  const [lifeBulletinPublicLimit, setLifeBulletinPublicLimit] = useState(12);
+  const [lifeBulletinPublicOffset, setLifeBulletinPublicOffset] = useState(0);
+  const [lifeBulletinDetailOpen, setLifeBulletinDetailOpen] = useState(false);
+  const [lifeBulletinDetailItem, setLifeBulletinDetailItem] = useState<LifeBulletin | null>(null);
+
+
   const [viewMessage, setViewMessage] = useState("");
   const {
     eventQuery,
@@ -370,9 +448,9 @@ export default function App() {
     siteId: "",
   });
   const [adminMessage, setAdminMessage] = useState("");
-  const [adminTab, setAdminTab] = useState<"prayers" | "members" | "events" | "messages">(
-    "prayers"
-  );
+  const [adminTab, setAdminTab] = useState<
+    "weekly-verse" | "prayers" | "members" | "events" | "messages" | "life-bulletins"
+  >("prayers");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [eventPosterFile, setEventPosterFile] = useState<File | null>(null);
@@ -388,6 +466,23 @@ export default function App() {
   const [postLoginAction, setPostLoginAction] = useState<{ view: ActiveView } | null>(null);
   const [pendingRegistrationEvent, setPendingRegistrationEvent] = useState<EventItem | null>(null);
   const [registrationEvent, setRegistrationEvent] = useState<EventItem | null>(null);
+  const [registrationRecord, setRegistrationRecord] = useState<RegistrationItem | null>(null);
+  const [registrationAdminOpen, setRegistrationAdminOpen] = useState(false);
+  const [registrationAdminEvent, setRegistrationAdminEvent] = useState<EventItem | null>(null);
+  const [registrationAdminList, setRegistrationAdminList] = useState<AdminRegistrationItem[]>([]);
+  const [registrationAdminQuery, setRegistrationAdminQuery] = useState("");
+  const [registrationAdminStatus, setRegistrationAdminStatus] = useState("");
+  const [registrationAdminLimit, setRegistrationAdminLimit] = useState(20);
+  const [registrationAdminOffset, setRegistrationAdminOffset] = useState(0);
+  const [registrationAdminMessage, setRegistrationAdminMessage] = useState("");
+  const [registrationAdminEditing, setRegistrationAdminEditing] =
+    useState<AdminRegistrationItem | null>(null);
+  const [registrationAdminForm, setRegistrationAdminForm] = useState({
+    ticketCount: 1,
+    isProxy: false,
+    status: "Pending",
+    proxyEntries: [{ name: "", phone: "", relation: "", note: "" }],
+  });
   const [registrationForm, setRegistrationForm] = useState({
     ticketCount: 1,
     isProxy: false,
@@ -410,8 +505,8 @@ export default function App() {
 
   const fallbackSummary: DashboardSummary = {
     daily_verse: {
-      text: "凡勞苦擔重擔的人，可以到我這裡來。",
-      reference: "馬太福音 11:28",
+      text: "",
+      reference: "",
     },
     checkin_qr_hint: "主日/活動簽到快速通行",
     giving_masked: "******",
@@ -450,7 +545,118 @@ export default function App() {
   const isStaff = currentUser ? staffRoles.has(currentUser.role) : false;
   const weeklyVerseSiteId = currentUser?.site_id || weeklyVerseForm.siteId;
   const weeklyVerseSiteLocked = true;
-  const { registrationCountByEvent } = useRegistrations(token);
+  const sundayMessageSiteId =
+    sundayMessageSite === "all" ? null : siteUuidByCode[sundayMessageSite];
+  const adminSundayMessageSiteId = currentUser?.site_id || "";
+  const buildPrayersPath = useCallback(() => {
+    const params = new URLSearchParams();
+    if (prayerQuery) params.set("q", prayerQuery);
+    if (prayerPrivacy) params.set("privacy_level", prayerPrivacy);
+    if (prayerSite) params.set("site_id", prayerSite);
+    if (prayerSortBy) params.set("sort_by", prayerSortBy);
+    if (prayerSortDir) params.set("sort_dir", prayerSortDir);
+    params.set("limit", String(prayerLimit));
+    params.set("offset", String(prayerOffset));
+    return params.toString() ? `/prayers?${params.toString()}` : "/prayers";
+  }, [prayerQuery, prayerPrivacy, prayerSite, prayerSortBy, prayerSortDir, prayerLimit, prayerOffset]);
+
+  const buildCarePath = useCallback(() => {
+    const params = new URLSearchParams();
+    if (careQuery) params.set("q", careQuery);
+    if (careStatus) params.set("status", careStatus);
+    if (careSite) params.set("site_id", careSite);
+    if (careSortBy) params.set("sort_by", careSortBy);
+    if (careSortDir) params.set("sort_dir", careSortDir);
+    params.set("limit", String(careLimit));
+    params.set("offset", String(careOffset));
+    return params.toString() ? `/care/subjects?${params.toString()}` : "/care/subjects";
+  }, [careQuery, careStatus, careSite, careSortBy, careSortDir, careLimit, careOffset]);
+
+  const homeLifeBulletin = homeLifeBulletins[0] || null;
+  const homeLifeBulletinLines = useMemo(() => {
+    if (!homeLifeBulletin?.content) {
+      return [];
+    }
+    return homeLifeBulletin.content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }, [homeLifeBulletin]);
+
+  const buildAdminPrayersPath = useCallback(() => {
+    const params = new URLSearchParams();
+    if (adminPrayerQuery) params.set("q", adminPrayerQuery);
+    if (adminPrayerPrivacy) params.set("privacy_level", adminPrayerPrivacy);
+    if (adminPrayerSite) params.set("site_id", adminPrayerSite);
+    if (adminPrayerSortBy) params.set("sort_by", adminPrayerSortBy);
+    if (adminPrayerSortDir) params.set("sort_dir", adminPrayerSortDir);
+    params.set("limit", String(adminPrayerLimit));
+    params.set("offset", String(adminPrayerOffset));
+    return params.toString() ? `/prayers/admin?${params.toString()}` : "/prayers/admin";
+  }, [
+    adminPrayerQuery,
+    adminPrayerPrivacy,
+    adminPrayerSite,
+    adminPrayerSortBy,
+    adminPrayerSortDir,
+    adminPrayerLimit,
+    adminPrayerOffset,
+  ]);
+
+  const buildAdminUsersPath = useCallback(() => {
+    const params = new URLSearchParams();
+    if (adminUserQuery) params.set("q", adminUserQuery);
+    if (adminUserRole) params.set("role", adminUserRole);
+    if (adminUserSite) params.set("site_id", adminUserSite);
+    if (adminUserActive) params.set("is_active", adminUserActive);
+    if (adminUserSortBy) params.set("sort_by", adminUserSortBy);
+    if (adminUserSortDir) params.set("sort_dir", adminUserSortDir);
+    params.set("limit", String(adminUserLimit));
+    params.set("offset", String(adminUserOffset));
+    return params.toString() ? `/admin/users?${params.toString()}` : "/admin/users";
+  }, [
+    adminUserQuery,
+    adminUserRole,
+    adminUserSite,
+    adminUserActive,
+    adminUserSortBy,
+    adminUserSortDir,
+    adminUserLimit,
+    adminUserOffset,
+  ]);
+
+  const buildSundayMessagesPath = useCallback(() => {
+    const params = new URLSearchParams();
+    if (sundayMessageQuery) params.set("query", sundayMessageQuery);
+    if (sundayMessageSiteId) params.set("site_id", sundayMessageSiteId);
+    if (sundayMessageSortBy) params.set("sort_by", sundayMessageSortBy);
+    if (sundayMessageSortDir) params.set("sort_dir", sundayMessageSortDir);
+    params.set("limit", String(sundayMessageLimit));
+    params.set("offset", String(sundayMessageOffset));
+    return params.toString()
+      ? `/sunday-messages/public?${params.toString()}`
+      : "/sunday-messages/public";
+  }, [
+    sundayMessageQuery,
+    sundayMessageSiteId,
+    sundayMessageSortBy,
+    sundayMessageSortDir,
+    sundayMessageLimit,
+    sundayMessageOffset,
+  ]);
+
+  const buildAdminSundayMessagesPath = useCallback(() => {
+    const params = new URLSearchParams();
+    if (adminSundayMessageSiteId) params.set("site_id", adminSundayMessageSiteId);
+    params.set("limit", String(adminSundayMessageLimit));
+    params.set("offset", String(adminSundayMessageOffset));
+    return params.toString()
+      ? `/sunday-messages?${params.toString()}`
+      : "/sunday-messages";
+  }, [adminSundayMessageSiteId, adminSundayMessageLimit, adminSundayMessageOffset]);
+
+  const { registrationsData, registrationCountByEvent, setRegistrationsData } =
+    useRegistrations(token);
   const {
     prayersData,
     setPrayersData,
@@ -487,6 +693,7 @@ export default function App() {
     activeView,
     homeSiteId: siteUuidByCode[activeSiteId],
     weeklyVerseSiteId,
+    token,
     weeklyVerseForm,
     setWeeklyVerseForm,
     setWeeklyVerseMessage,
@@ -597,12 +804,11 @@ export default function App() {
           ...item,
           id: String(index),
         }));
-  const sundayMessageSiteId =
-    sundayMessageSite === "all" ? null : siteUuidByCode[sundayMessageSite];
-  const adminSundayMessageSiteId = currentUser?.site_id || siteUuidByCode.center;
+  const isAllSites = activeSiteId === "all";
   const homeVerse = weeklyVerse ?? {
-    text: "凡勞苦擔重擔的人，可以到我這裡來。",
-    reference: "馬太福音 11:28",
+    text: "",
+    reference: "",
+    reading_plan: "",
   };
 
   useEffect(() => {
@@ -679,10 +885,98 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
+    if (activeView !== "home") {
+      return;
+    }
+    if (!isAllSites) {
+      setHomeWeeklyVerses([]);
+      return;
+    }
+    const siteIds = Object.values(siteUuidByCode);
+    Promise.all(
+      siteIds.map((siteId) =>
+        apiGet<WeeklyVerse>(`/weekly-verse/current?site_id=${siteId}`)
+          .then((item) => item)
+          .catch(() => null)
+      )
+    )
+      .then((items) => setHomeWeeklyVerses(items.filter(Boolean) as WeeklyVerse[]))
+      .catch(() => setHomeWeeklyVerses([]));
+  }, [activeView, isAllSites]);
+
+  useEffect(() => {
     if (!sundayMessageForm.messageDate) {
       setSundayMessageForm((prev) => ({ ...prev, messageDate: getCurrentSundayDate() }));
     }
   }, [sundayMessageForm.messageDate]);
+
+  useEffect(() => {
+    const computedCount = registrationForm.isProxy
+      ? registrationForm.proxyEntries.length + 1
+      : 1;
+    if (registrationForm.ticketCount !== computedCount) {
+      setRegistrationForm((prev) => ({ ...prev, ticketCount: computedCount }));
+    }
+  }, [registrationForm.isProxy, registrationForm.proxyEntries.length]);
+
+  useEffect(() => {
+    if (activeView !== "registration" || !registrationEvent) {
+      return;
+    }
+    const match =
+      registrationsData?.find((item) => item.event_id === registrationEvent.id) || null;
+    setRegistrationRecord(match);
+    if (match) {
+      setRegistrationForm({
+        ticketCount: match.ticket_count || 1,
+        isProxy: match.is_proxy,
+        proxyEntries:
+          match.proxy_entries && match.proxy_entries.length
+            ? match.proxy_entries.map((entry) => ({
+                name: entry.name,
+                phone: entry.phone || "",
+                relation: entry.relation || "",
+                note: entry.note || "",
+              }))
+            : [{ name: "", phone: "", relation: "", note: "" }],
+      });
+    }
+  }, [activeView, registrationEvent, registrationsData]);
+
+  useEffect(() => {
+    if (!registrationAdminOpen || !registrationAdminEvent || !token || !isStaff) {
+      return;
+    }
+    const params = new URLSearchParams({
+      event_id: registrationAdminEvent.id,
+      limit: String(registrationAdminLimit),
+      offset: String(registrationAdminOffset),
+    });
+    if (registrationAdminQuery) {
+      params.set("q", registrationAdminQuery);
+    }
+    if (registrationAdminStatus) {
+      params.set("status", registrationAdminStatus);
+    }
+    apiGet<AdminRegistrationItem[]>(`/registrations/admin?${params.toString()}`, token)
+      .then((data) => {
+        setRegistrationAdminList(data);
+        setRegistrationAdminMessage("");
+      })
+      .catch((error) => {
+        setRegistrationAdminList([]);
+        setRegistrationAdminMessage(error?.message || "讀取報名資料失敗");
+      });
+  }, [
+    registrationAdminOpen,
+    registrationAdminEvent,
+    registrationAdminQuery,
+    registrationAdminStatus,
+    registrationAdminLimit,
+    registrationAdminOffset,
+    token,
+    isStaff,
+  ]);
 
   useEffect(() => {
     if (activeView !== "home") {
@@ -700,6 +994,52 @@ export default function App() {
       .then((data) => setHomeSundayMessages(data))
       .catch(() => setHomeSundayMessages([]));
   }, [activeView, activeSiteId]);
+
+  useEffect(() => {
+    if (activeView !== "home") {
+      return;
+    }
+    const params = new URLSearchParams();
+    if (siteUuidByCode[activeSiteId]) {
+      params.set("site_id", siteUuidByCode[activeSiteId]);
+    }
+    params.set("limit", "5");
+    const path = params.toString()
+      ? `/life-bulletins/latest?${params.toString()}`
+      : "/life-bulletins/latest";
+    apiGet<LifeBulletin[]>(path)
+      .then((data) => setHomeLifeBulletins(data))
+      .catch(() => setHomeLifeBulletins([]));
+  }, [activeView, activeSiteId]);
+
+
+
+  useEffect(() => {
+    if (activeView !== "life-bulletins") {
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set("status", "Published");
+    if (lifeBulletinPublicQuery) params.set("query", lifeBulletinPublicQuery);
+    if (lifeBulletinPublicSite !== "all") {
+      params.set("site_id", siteUuidByCode[lifeBulletinPublicSite]);
+    }
+    if (lifeBulletinPublicSortBy) params.set("sort_by", lifeBulletinPublicSortBy);
+    if (lifeBulletinPublicSortDir) params.set("sort_dir", lifeBulletinPublicSortDir);
+    params.set("limit", String(lifeBulletinPublicLimit));
+    params.set("offset", String(lifeBulletinPublicOffset));
+    apiGet<LifeBulletin[]>(`/life-bulletins/public?${params.toString()}`)
+      .then((data) => setLifeBulletinPublic(data))
+      .catch(() => setLifeBulletinPublic([]));
+  }, [
+    activeView,
+    lifeBulletinPublicQuery,
+    lifeBulletinPublicSite,
+    lifeBulletinPublicSortBy,
+    lifeBulletinPublicSortDir,
+    lifeBulletinPublicLimit,
+    lifeBulletinPublicOffset,
+  ]);
 
   useEffect(() => {
     if (activeView !== "messages") {
@@ -736,6 +1076,39 @@ export default function App() {
     adminSundayMessageLimit,
     adminSundayMessageOffset,
     adminSundayMessageSiteId,
+  ]);
+
+  useEffect(() => {
+    if (activeView !== "admin" || adminTab !== "life-bulletins" || !token || !isStaff) {
+      return;
+    }
+    const params = new URLSearchParams();
+    if (lifeBulletinQuery) params.set("query", lifeBulletinQuery);
+    if (lifeBulletinStatus) params.set("status", lifeBulletinStatus);
+    if (lifeBulletinSortBy) params.set("sort_by", lifeBulletinSortBy);
+    if (lifeBulletinSortDir) params.set("sort_dir", lifeBulletinSortDir);
+    params.set("limit", String(lifeBulletinLimit));
+    params.set("offset", String(lifeBulletinOffset));
+    apiGet<LifeBulletin[]>(`/life-bulletins?${params.toString()}`, token)
+      .then((data) => {
+        setLifeBulletins(data);
+        setLifeBulletinMessage("");
+      })
+      .catch((error) => {
+        setLifeBulletins([]);
+        setLifeBulletinMessage(error?.message || "?? Life ????");
+      });
+  }, [
+    activeView,
+    adminTab,
+    token,
+    isStaff,
+    lifeBulletinQuery,
+    lifeBulletinStatus,
+    lifeBulletinSortBy,
+    lifeBulletinSortDir,
+    lifeBulletinLimit,
+    lifeBulletinOffset,
   ]);
 
 
@@ -817,11 +1190,15 @@ export default function App() {
   ]);
 
   const handleStartRegistration = (eventId: string) => {
-    const match = eventsData?.find((item) => item.id === eventId) || null;
+    const sourceEvents =
+      eventsData && eventsData.length ? eventsData : homeEvents && homeEvents.length ? homeEvents : [];
+    const match = sourceEvents.find((item) => item.id === eventId) || null;
     if (!match) {
-      setViewMessage("找不到活動資料");
+      setViewMessage("????????");
       return;
     }
+    const existingRegistration =
+      registrationsData?.find((item) => item.event_id === eventId) || null;
     setViewMessage("");
     if (!token) {
       setPendingRegistrationEvent(match);
@@ -830,9 +1207,46 @@ export default function App() {
       setIsLoginOpen(true);
       return;
     }
+    setRegistrationRecord(existingRegistration);
+    if (existingRegistration) {
+      setRegistrationForm({
+        ticketCount: existingRegistration.ticket_count || 1,
+        isProxy: existingRegistration.is_proxy,
+        proxyEntries:
+          existingRegistration.proxy_entries && existingRegistration.proxy_entries.length
+            ? existingRegistration.proxy_entries.map((entry) => ({
+                name: entry.name,
+                phone: entry.phone || "",
+                relation: entry.relation || "",
+                note: entry.note || "",
+              }))
+            : [{ name: "", phone: "", relation: "", note: "" }],
+      });
+    } else {
+      setRegistrationForm({
+        ticketCount: 1,
+        isProxy: false,
+        proxyEntries: [{ name: "", phone: "", relation: "", note: "" }],
+      });
+    }
     setRegistrationEvent(match);
     setRegistrationMessage("");
     setActiveView("registration");
+  };
+
+  const handleOpenRegistrationAdmin = (eventId: string) => {
+    const match = eventsData?.find((item) => item.id === eventId) || null;
+    if (!match) {
+      setAdminMessage("找不到活動資料");
+      return;
+    }
+    setRegistrationAdminEvent(match);
+    setRegistrationAdminOpen(true);
+    setRegistrationAdminQuery("");
+    setRegistrationAdminStatus("");
+    setRegistrationAdminOffset(0);
+    setRegistrationAdminMessage("");
+    setRegistrationAdminEditing(null);
   };
 
   const handleSubmitRegistration = async (event: React.FormEvent) => {
@@ -853,27 +1267,26 @@ export default function App() {
     setRegistrationSubmitting(true);
     setRegistrationMessage("");
     try {
-      const firstProxy = registrationForm.proxyEntries[0];
-      await apiPost(
-        "/registrations",
-        {
-          event_id: registrationEvent.id,
-          ticket_count: registrationForm.ticketCount,
-          is_proxy: registrationForm.isProxy,
-          proxy_name: registrationForm.isProxy ? firstProxy?.name : null,
-          proxy_phone: registrationForm.isProxy ? firstProxy?.phone : null,
-          proxy_relation: registrationForm.isProxy ? firstProxy?.relation : null,
-          proxy_note: registrationForm.isProxy ? firstProxy?.note : null,
-          proxy_entries: registrationForm.isProxy ? registrationForm.proxyEntries : [],
-        },
-        token
-      );
-      setRegistrationMessage("報名完成");
+      const payload = {
+        ticket_count: registrationForm.ticketCount,
+        is_proxy: registrationForm.isProxy,
+        proxy_entries: registrationForm.isProxy ? registrationForm.proxyEntries : [],
+      };
+      if (registrationRecord?.id) {
+        await apiPatch(`/registrations/${registrationRecord.id}`, payload, token);
+        setRegistrationMessage("報名資料已更新");
+      } else {
+        await apiPost("/registrations", { event_id: registrationEvent.id, ...payload }, token);
+        setRegistrationMessage("報名完成");
+      }
+      const latest = await apiGet<RegistrationItem[]>("/registrations", token);
+      setRegistrationsData(latest);
       setRegistrationForm({
         ticketCount: 1,
         isProxy: false,
         proxyEntries: [{ name: "", phone: "", relation: "", note: "" }],
       });
+      setRegistrationRecord(null);
     } catch (error: any) {
       setRegistrationMessage(error?.message || "報名失敗");
     } finally {
@@ -938,6 +1351,11 @@ export default function App() {
     setPostLoginAction(null);
     setPendingRegistrationEvent(null);
     setRegistrationEvent(null);
+    setRegistrationRecord(null);
+    setRegistrationAdminOpen(false);
+    setRegistrationAdminEvent(null);
+    setRegistrationAdminList([]);
+    setRegistrationAdminEditing(null);
     setRegistrationForm({
       ticketCount: 1,
       isProxy: false,
@@ -975,13 +1393,14 @@ export default function App() {
       if (weeklyVerseEditingId) {
         await apiPatch<WeeklyVerse>(
           `/weekly-verse/${weeklyVerseEditingId}`,
-          {
-            week_start: weeklyVerseForm.weekStart,
-            text: weeklyVerseForm.text,
-            reference: weeklyVerseForm.reference,
-          },
-          token
-        );
+            {
+              week_start: weeklyVerseForm.weekStart,
+              text: weeklyVerseForm.text,
+              reference: weeklyVerseForm.reference,
+              reading_plan: weeklyVerseForm.readingPlan || null,
+            },
+            token
+          );
         setWeeklyVerseMessage("金句已更新");
       } else {
         await apiPost<WeeklyVerse>(
@@ -991,6 +1410,7 @@ export default function App() {
             week_start: weeklyVerseForm.weekStart,
             text: weeklyVerseForm.text,
             reference: weeklyVerseForm.reference,
+            reading_plan: weeklyVerseForm.readingPlan || null,
           },
           token
         );
@@ -1000,7 +1420,116 @@ export default function App() {
       setWeeklyVerseList(data);
       setWeeklyVerseEditingId(null);
     } catch (error: any) {
-      setWeeklyVerseMessage(error?.message || "更新本週金句失敗");
+      const message = error?.message || "更新本週金句失敗";
+      if (String(message).includes("Not authenticated")) {
+        setToken(null);
+        setIsLoginOpen(true);
+        setAuthMode("login");
+        setLoginMessage("請先登入");
+      }
+      setWeeklyVerseMessage(message);
+    }
+  };
+
+  const handleEditRegistrationAdmin = (item: AdminRegistrationItem) => {
+    setRegistrationAdminEditing(item);
+    setRegistrationAdminForm({
+      ticketCount: item.ticket_count || 1,
+      isProxy: item.is_proxy,
+      status: item.status || "Pending",
+      proxyEntries:
+        item.proxy_entries && item.proxy_entries.length
+          ? item.proxy_entries.map((entry) => ({
+              name: entry.name,
+              phone: entry.phone || "",
+              relation: entry.relation || "",
+              note: entry.note || "",
+            }))
+          : [{ name: "", phone: "", relation: "", note: "" }],
+    });
+  };
+
+  const handleUpdateRegistrationAdmin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!registrationAdminEditing || !token) {
+      return;
+    }
+    try {
+      const payload = {
+        ticket_count: registrationAdminForm.ticketCount,
+        is_proxy: registrationAdminForm.isProxy,
+        status: registrationAdminForm.status,
+        proxy_entries: registrationAdminForm.isProxy
+          ? registrationAdminForm.proxyEntries
+          : [],
+      };
+      const updated = await apiPatch<AdminRegistrationItem>(
+        `/registrations/admin/${registrationAdminEditing.id}`,
+        payload,
+        token
+      );
+      setRegistrationAdminList((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item))
+      );
+      setRegistrationAdminEditing(updated);
+      setRegistrationAdminMessage("報名資料已更新");
+    } catch (error: any) {
+      setRegistrationAdminMessage(error?.message || "更新報名資料失敗");
+    }
+  };
+
+  const handleDeleteRegistrationAdmin = async (registrationId: string) => {
+    if (!token) {
+      return;
+    }
+    if (!window.confirm("確定要刪除此筆報名資料嗎？")) {
+      return;
+    }
+    try {
+      await apiDelete(`/registrations/admin/${registrationId}`, token);
+      setRegistrationAdminList((prev) => prev.filter((item) => item.id !== registrationId));
+      setRegistrationAdminMessage("報名資料已刪除");
+      if (registrationAdminEditing?.id === registrationId) {
+        setRegistrationAdminEditing(null);
+      }
+    } catch (error: any) {
+      setRegistrationAdminMessage(error?.message || "刪除報名資料失敗");
+    }
+  };
+
+  const handleExportRegistrations = async () => {
+    if (!token || !registrationAdminEvent) {
+      return;
+    }
+    const params = new URLSearchParams({
+      event_id: registrationAdminEvent.id,
+    });
+    if (registrationAdminQuery) {
+      params.set("q", registrationAdminQuery);
+    }
+    if (registrationAdminStatus) {
+      params.set("status", registrationAdminStatus);
+    }
+    const url = `${API_BASE_URL}/registrations/admin/export?${params.toString()}`;
+    try {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "匯出失敗");
+      }
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `registrations_${registrationAdminEvent.id}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error: any) {
+      setRegistrationAdminMessage(error?.message || "匯出失敗");
     }
   };
 
@@ -1011,6 +1540,7 @@ export default function App() {
       weekStart: item.week_start,
       text: item.text,
       reference: item.reference,
+      readingPlan: item.reading_plan || "",
     });
   };
 
@@ -1034,6 +1564,7 @@ export default function App() {
           weekStart: getCurrentSundayDate(),
           text: "",
           reference: "",
+          readingPlan: "",
         }));
       }
     } catch (error: any) {
@@ -1048,6 +1579,10 @@ export default function App() {
       return;
     }
     setSundayMessageMessage("");
+    if (!adminSundayMessageSiteId) {
+      setSundayMessageMessage("未設定分站，無法儲存");
+      return;
+    }
     try {
       const payload = {
         site_id: adminSundayMessageSiteId,
@@ -1071,6 +1606,13 @@ export default function App() {
       const data = await apiGet<SundayMessage[]>(buildAdminSundayMessagesPath(), token);
       setAdminSundayMessages(data);
       setSundayMessageEditingId(null);
+      setSundayMessageForm({
+        messageDate: getCurrentSundayDate(),
+        title: "",
+        speaker: "",
+        youtubeUrl: "",
+        description: "",
+      });
     } catch (error: any) {
       setSundayMessageMessage(error?.message || "\u66f4\u65b0\u4e3b\u65e5\u4fe1\u606f\u5931\u6557");
     }
@@ -1116,7 +1658,94 @@ export default function App() {
     }
   };
 
-  const handleCreateEvent = async (event: React.FormEvent) => {
+  
+  const handleEditLifeBulletin = (item: LifeBulletin) => {
+    setLifeBulletinEditingId(item.id);
+    setLifeBulletinForm({
+      bulletinDate: item.bulletin_date,
+      content: item.content,
+      videoUrl: item.video_url || "",
+      status: item.status,
+    });
+    setLifeBulletinVideoFile(null);
+  };
+
+  const handleSubmitLifeBulletin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!token || !currentUser?.site_id) {
+      setAuthMode("login");
+      setIsLoginOpen(true);
+      setLoginMessage("????");
+      return;
+    }
+    try {
+      setLifeBulletinMessage("");
+      const payload = {
+        site_id: currentUser.site_id,
+        bulletin_date: lifeBulletinForm.bulletinDate,
+        content: lifeBulletinForm.content,
+        video_url: lifeBulletinForm.videoUrl || null,
+        status: lifeBulletinForm.status,
+      };
+      let record: LifeBulletin;
+      if (lifeBulletinEditingId) {
+        record = await apiPatch<LifeBulletin>(
+          `/life-bulletins/${lifeBulletinEditingId}`,
+          payload,
+          token
+        );
+      } else {
+        record = await apiPost<LifeBulletin>("/life-bulletins", payload, token);
+      }
+      if (lifeBulletinVideoFile) {
+        const formData = new FormData();
+        formData.append("file", lifeBulletinVideoFile);
+        record = await apiUpload<LifeBulletin>(
+          `/life-bulletins/${record.id}/video`,
+          formData,
+          token
+        );
+      }
+      const params = new URLSearchParams();
+      if (lifeBulletinQuery) params.set("query", lifeBulletinQuery);
+      if (lifeBulletinStatus) params.set("status", lifeBulletinStatus);
+      if (lifeBulletinSortBy) params.set("sort_by", lifeBulletinSortBy);
+      if (lifeBulletinSortDir) params.set("sort_dir", lifeBulletinSortDir);
+      params.set("limit", String(lifeBulletinLimit));
+      params.set("offset", String(lifeBulletinOffset));
+      const data = await apiGet<LifeBulletin[]>(`/life-bulletins?${params.toString()}`, token);
+      setLifeBulletins(data);
+      setLifeBulletinEditingId(null);
+      setLifeBulletinForm({ bulletinDate: "", content: "", videoUrl: "", status: "Draft" });
+      setLifeBulletinVideoFile(null);
+      setLifeBulletinMessage(lifeBulletinEditingId ? "??? Life ??" : "??? Life ??");
+    } catch (error: any) {
+      setLifeBulletinMessage(error?.message || "?? Life ????");
+    }
+  };
+
+  const handleDeleteLifeBulletin = async (bulletinId: string) => {
+    if (!token) {
+      setAuthMode("login");
+      setIsLoginOpen(true);
+      setLoginMessage("????");
+      return;
+    }
+    try {
+      await apiDelete(`/life-bulletins/${bulletinId}`, token);
+      setLifeBulletins((prev) => prev.filter((item) => item.id !== bulletinId));
+      if (lifeBulletinEditingId === bulletinId) {
+        setLifeBulletinEditingId(null);
+        setLifeBulletinForm({ bulletinDate: "", content: "", videoUrl: "", status: "Draft" });
+        setLifeBulletinVideoFile(null);
+      }
+      setLifeBulletinMessage("??? Life ??");
+    } catch (error: any) {
+      setLifeBulletinMessage(error?.message || "?? Life ????");
+    }
+  };
+
+const handleCreateEvent = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!token) {
       setIsLoginOpen(true);
@@ -1373,6 +2002,12 @@ export default function App() {
     setProfileMessage("");
     setProfileModalOpen(true);
   };
+  const quickActions = [
+    { label: "\u5feb\u901f\u5831\u540d", action: () => setActiveView("events") },
+    { label: "\u6d3b\u52d5\u7e3d\u89bd", action: () => setActiveView("events") },
+    { label: "\u63d0\u5831\u4ee3\u79b1", action: () => setActiveView("prayers") },
+    { label: "\u66f4\u65b0\u500b\u4eba\u8cc7\u8a0a", action: handleOpenProfileModal },
+  ];
 
   const handleCloseProfileModal = () => {
     setProfileModalOpen(false);
@@ -1433,76 +2068,36 @@ export default function App() {
     return `${API_BASE_URL}${posterUrl}`;
   }
 
-  function buildPrayersPath() {
-    const params = new URLSearchParams();
-    if (prayerQuery) params.set("q", prayerQuery);
-    if (prayerPrivacy) params.set("privacy_level", prayerPrivacy);
-    if (prayerSite) params.set("site_id", prayerSite);
-    if (prayerSortBy) params.set("sort_by", prayerSortBy);
-    if (prayerSortDir) params.set("sort_dir", prayerSortDir);
-    params.set("limit", String(prayerLimit));
-    params.set("offset", String(prayerOffset));
-    return params.toString() ? `/prayers?${params.toString()}` : "/prayers";
+  function extractYouTubeId(url: string) {
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname.replace("www.", "");
+      if (host === "youtu.be") {
+        return parsed.pathname.split("/")[1] || null;
+      }
+      if (host.endsWith("youtube.com")) {
+        if (parsed.pathname === "/watch") {
+          return parsed.searchParams.get("v");
+        }
+        if (parsed.pathname.startsWith("/live/") || parsed.pathname.startsWith("/embed/")) {
+          return parsed.pathname.split("/")[2] || null;
+        }
+      }
+    } catch (error) {
+      return null;
+    }
+    return null;
   }
 
-  function buildCarePath() {
-    const params = new URLSearchParams();
-    if (careQuery) params.set("q", careQuery);
-    if (careStatus) params.set("status", careStatus);
-    if (careSite) params.set("site_id", careSite);
-    if (careSortBy) params.set("sort_by", careSortBy);
-    if (careSortDir) params.set("sort_dir", careSortDir);
-    params.set("limit", String(careLimit));
-    params.set("offset", String(careOffset));
-    return params.toString() ? `/care/subjects?${params.toString()}` : "/care/subjects";
-  }
-
-  function buildAdminPrayersPath() {
-    const params = new URLSearchParams();
-    if (adminPrayerQuery) params.set("q", adminPrayerQuery);
-    if (adminPrayerPrivacy) params.set("privacy_level", adminPrayerPrivacy);
-    if (adminPrayerSite) params.set("site_id", adminPrayerSite);
-    if (adminPrayerSortBy) params.set("sort_by", adminPrayerSortBy);
-    if (adminPrayerSortDir) params.set("sort_dir", adminPrayerSortDir);
-    params.set("limit", String(adminPrayerLimit));
-    params.set("offset", String(adminPrayerOffset));
-    return params.toString() ? `/prayers/admin?${params.toString()}` : "/prayers/admin";
-  }
-
-  function buildAdminUsersPath() {
-    const params = new URLSearchParams();
-    if (adminUserQuery) params.set("q", adminUserQuery);
-    if (adminUserRole) params.set("role", adminUserRole);
-    if (adminUserSite) params.set("site_id", adminUserSite);
-    if (adminUserActive) params.set("is_active", adminUserActive);
-    if (adminUserSortBy) params.set("sort_by", adminUserSortBy);
-    if (adminUserSortDir) params.set("sort_dir", adminUserSortDir);
-    params.set("limit", String(adminUserLimit));
-    params.set("offset", String(adminUserOffset));
-    return params.toString() ? `/admin/users?${params.toString()}` : "/admin/users";
-  }
-
-  function buildSundayMessagesPath() {
-    const params = new URLSearchParams();
-    if (sundayMessageQuery) params.set("query", sundayMessageQuery);
-    if (sundayMessageSiteId) params.set("site_id", sundayMessageSiteId);
-    if (sundayMessageSortBy) params.set("sort_by", sundayMessageSortBy);
-    if (sundayMessageSortDir) params.set("sort_dir", sundayMessageSortDir);
-    params.set("limit", String(sundayMessageLimit));
-    params.set("offset", String(sundayMessageOffset));
-    return params.toString()
-      ? `/sunday-messages/public?${params.toString()}`
-      : "/sunday-messages/public";
-  }
-
-  function buildAdminSundayMessagesPath() {
-    const params = new URLSearchParams();
-    if (adminSundayMessageSiteId) params.set("site_id", adminSundayMessageSiteId);
-    params.set("limit", String(adminSundayMessageLimit));
-    params.set("offset", String(adminSundayMessageOffset));
-    return params.toString()
-      ? `/sunday-messages?${params.toString()}`
-      : "/sunday-messages";
+  function resolveYouTubeThumbnail(url?: string | null) {
+    if (!url) {
+      return null;
+    }
+    const videoId = extractYouTubeId(url);
+    if (!videoId) {
+      return null;
+    }
+    return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   }
 
   function isUuid(value: string) {
@@ -1550,9 +2145,14 @@ export default function App() {
           <p className="card-title">快速入口</p>
           <div className="chip-row">
             {quickActions.map((item) => (
-              <span key={item} className="action-chip">
-                {item}
-              </span>
+              <button
+                key={item.label}
+                className="action-chip"
+                type="button"
+                onClick={item.action}
+              >
+                {item.label}
+              </button>
             ))}
           </div>
         </article>
@@ -1631,13 +2231,13 @@ export default function App() {
             className={`nav-link ${activeView === "events" ? "active" : ""}`}
             onClick={() => setActiveView("events")}
           >
-            活動
+            查看全部 →
           </button>
           <button
             className={`nav-link ${activeView === "messages" ? "active" : ""}`}
             onClick={() => setActiveView("messages")}
           >
-            主日聚會信息
+            查看全部 →
           </button>
 
           <button className="nav-link">小組</button>
@@ -1735,6 +2335,9 @@ export default function App() {
                   <label className="field">
                     Email
                     <input
+                      id="login-email"
+                      name="email"
+                      autoComplete="email"
                       value={loginEmail}
                       onChange={(event) => setLoginEmail(event.target.value)}
                     />
@@ -1743,6 +2346,9 @@ export default function App() {
                     密碼
                     <input
                       type="password"
+                      id="login-password"
+                      name="password"
+                      autoComplete="current-password"
                       value={loginPassword}
                       onChange={(event) => setLoginPassword(event.target.value)}
                     />
@@ -1761,6 +2367,9 @@ export default function App() {
                   <label className="field">
                     姓名
                     <input
+                      id="register-name"
+                      name="name"
+                      autoComplete="name"
                       value={registerName}
                       onChange={(event) => setRegisterName(event.target.value)}
                     />
@@ -1768,6 +2377,9 @@ export default function App() {
                   <label className="field">
                     Email
                     <input
+                      id="register-email"
+                      name="email"
+                      autoComplete="email"
                       value={registerEmail}
                       onChange={(event) => setRegisterEmail(event.target.value)}
                     />
@@ -1776,6 +2388,9 @@ export default function App() {
                     密碼
                     <input
                       type="password"
+                      id="register-password"
+                      name="password"
+                      autoComplete="new-password"
                       value={registerPassword}
                       onChange={(event) => setRegisterPassword(event.target.value)}
                     />
@@ -1829,20 +2444,17 @@ export default function App() {
               </div>
               <div className="glass-panel">
                 <p className="panel-title">分站切換</p>
-                <div className="site-switcher">
+                <select
+                  className="site-select"
+                  value={activeSiteId}
+                  onChange={(event) => setActiveSiteId(event.target.value)}
+                >
                   {sites.map((site) => (
-                    <button
-                      key={site.id}
-                      className={`site-chip ${site.id === activeSiteId ? "active" : ""}`}
-                      onClick={() => setActiveSiteId(site.id)}
-                      style={{ "--chip": site.accent } as React.CSSProperties}
-                      aria-pressed={site.id === activeSiteId}
-                    >
-                      <span className="chip-dot" />
-                      <span>{site.name}</span>
-                    </button>
+                    <option key={site.id} value={site.id}>
+                      {site.name}
+                    </option>
                   ))}
-                </div>
+                </select>
                 <p className="panel-note">
                   切換分站會同步更新色系與活動內容。
                 </p>
@@ -1855,13 +2467,108 @@ export default function App() {
               <div>
                 <p className="eyebrow">本週金句</p>
                 <p className="muted">分站：{activeSite.name}</p>
-                {weeklyVerse?.week_start && (
-                  <p className="muted">週日日期：{formatWeekStartDate(weeklyVerse.week_start)}</p>
+                {isAllSites ? (
+                  <div className="verse-multi">
+                    {homeWeeklyVerses.length ? (
+                      homeWeeklyVerses.map((item) => (
+                        <div key={item.id} className="verse-multi-item">
+                          <div>
+                            <p className="muted">分站：{resolveSiteName(item.site_id)}</p>
+                            <p className="muted">
+                              週日日期：{formatWeekStartDate(item.week_start)}
+                            </p>
+                          </div>
+                          <p className="verse-text">「{item.text}」</p>
+                          <p className="muted">{item.reference}</p>
+                          {item.reading_plan && (
+                            <p className="reading-plan">
+                              本週讀經進度：{item.reading_plan}
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="muted">目前尚無各分站金句。</p>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {weeklyVerse?.week_start && (
+                      <p className="muted">
+                        週日日期：{formatWeekStartDate(weeklyVerse.week_start)}
+                      </p>
+                    )}
+                    <h2>「{homeVerse.text}」</h2>
+                    <p className="muted">{homeVerse.reference}</p>
+                    {homeVerse.reading_plan && (
+                      <p className="reading-plan">本週讀經進度：{homeVerse.reading_plan}</p>
+                    )}
+                  </>
                 )}
-                <h2>「{homeVerse.text}」</h2>
-                <p className="muted">{homeVerse.reference}</p>
               </div>
             </div>
+          </section>
+
+
+
+          <section className="section life-bulletins">
+            <div className="section-header life-bulletin-header">
+              <div>
+                <p className="eyebrow">Life 快報</p>
+                <h2>最新活動小快報，即時精華影片</h2>
+              </div>
+              <button className="text-link" onClick={() => setActiveView("life-bulletins")}>
+                查看全部 →
+              </button>
+            </div>
+            {homeLifeBulletin ? (
+              <article className="life-bulletin-card life-bulletin-marquee life-bulletin-lively">
+                <div className="life-bulletin-body">
+                  <div className="life-bulletin-meta">
+                    <span className="life-bulletin-tag">Life 快報</span>
+                    <span className="muted">
+                      日期：{formatDateLabel(homeLifeBulletin.bulletin_date)}
+                    </span>
+                  </div>
+                  <div
+                    className="life-bulletin-marquee-view"
+                  >
+                    <div className="life-bulletin-marquee-track">
+                      {(homeLifeBulletinLines.length ? homeLifeBulletinLines : ["(無內容)"]).map(
+                        (line, index) => (
+                          <div className="life-bulletin-line" key={`${line}-${index}`}>
+                            {line}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="life-bulletin-actions">
+                  <button
+                    className="button outline small"
+                    onClick={() => {
+                      setLifeBulletinDetailItem(homeLifeBulletin);
+                      setLifeBulletinDetailOpen(true);
+                    }}
+                  >
+                    展開
+                  </button>
+                  {homeLifeBulletin.video_url && (
+                    <a
+                      className="button primary small"
+                      href={homeLifeBulletin.video_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      觀看影片
+                    </a>
+                  )}
+                </div>
+              </article>
+            ) : (
+              <div className="week-empty muted">目前尚無 Life 快報。</div>
+            )}
           </section>
 
           <section className="section week-events">
@@ -1870,11 +2577,8 @@ export default function App() {
                 <p className="eyebrow">近期活動</p>
                 <h2>立即投入，找到你的下一場相遇</h2>
               </div>
-              <button
-                className="button outline small"
-                onClick={() => setActiveView("events")}
-              >
-                查看全部
+              <button className="text-link" onClick={() => setActiveView("events")}>
+                查看全部 →
               </button>
             </div>
             <div className="week-grid">
@@ -1899,48 +2603,63 @@ export default function App() {
                 <p className="eyebrow">主日聚會信息</p>
                 <h2>每週信息摘要，立即觀看主日影音</h2>
               </div>
-              <button
-                className="button outline small"
-                onClick={() => setActiveView("messages")}
-              >
-                更多
+              <button className="text-link" onClick={() => setActiveView("messages")}>
+                查看全部 →
               </button>
             </div>
             <div className="message-grid">
               {homeSundayMessages.length ? (
-                homeSundayMessages.map((message, index) => (
-                  <article
-                    key={message.id}
-                    className="message-card"
-                    style={{ "--delay": `${index * 0.08}s` } as React.CSSProperties}
-                  >
-                    <div className="message-card-body">
-                      <div className="message-card-header">
-                        <h3>{message.title}</h3>
-                        {message.speaker && <span className="pill">{message.speaker}</span>}
+                homeSundayMessages.map((message, index) => {
+                  const thumbnailUrl = resolveYouTubeThumbnail(message.youtube_url);
+                  return (
+                    <article
+                      key={message.id}
+                      className="message-card"
+                      style={{ "--delay": `${index * 0.08}s` } as React.CSSProperties}
+                    >
+                      <div className="message-card-body">
+                        <div className="message-card-header">
+                          <h3>{message.title}</h3>
+                        </div>
+                        <p className="muted">主日：{formatDateLabel(message.message_date)}</p>
+                        <p className="muted">分站：{resolveSiteName(message.site_id)}</p>
+                        {message.speaker && (
+                          <p className="muted">講員：{message.speaker}</p>
+                        )}
                       </div>
-                      <p className="muted">
-                        日期：{formatDateLabel(message.message_date)}
-                      </p>
-                      <p className="muted">
-                        分站：{resolveSiteName(message.site_id)}
-                      </p>
+                      <div className="message-card-side">
+                        <div className="message-thumb">
+                          {thumbnailUrl ? (
+                            <a
+                              href={message.youtube_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="message-thumb-link"
+                            >
+                              <img src={thumbnailUrl} alt={`${message.title} 縮圖`} />
+                            </a>
+                          ) : (
+                            <div className="message-thumb-placeholder muted">無縮圖</div>
+                          )}
+                        </div>
+                        <div className="message-actions">
+                          <a
+                            className="button outline small"
+                            href={message.youtube_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            觀看影片
+                          </a>
+                        </div>
+                      </div>
+                    
                       {message.description && (
-                        <p className="message-description muted">{message.description}</p>
+                        <p className="message-description muted message-description-full">{message.description}</p>
                       )}
-                      <div className="message-actions">
-                        <a
-                          className="button outline small"
-                          href={message.youtube_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          觀看影片
-                        </a>
-                      </div>
-                    </div>
-                  </article>
-                ))
+                    </article>
+                  );
+                })
               ) : (
                 <div className="week-empty muted">目前尚無主日聚會信息。</div>
               )}
@@ -2055,7 +2774,113 @@ export default function App() {
       )}
 
       
-      {activeView === "messages" && (
+      
+
+      {activeView === "life-bulletins" && (
+        <section className="section page-view">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">Life 快報</p>
+              <h2>近期 Life 快報與精華影片</h2>
+            </div>
+          </div>
+          <div className="events-filters">
+            <div className="filter-bar">
+              <input
+                type="search"
+                placeholder="搜尋關鍵字"
+                value={lifeBulletinPublicQuery}
+                onChange={(event) => setLifeBulletinPublicQuery(event.target.value)}
+              />
+              <select
+                value={lifeBulletinPublicSite}
+                onChange={(event) => setLifeBulletinPublicSite(event.target.value)}
+              >
+                <option value="all">全部分站</option>
+                {sites
+                  .filter((site) => site.id !== "all")
+                  .map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.name}
+                    </option>
+                  ))}
+              </select>
+              <select
+                value={lifeBulletinPublicSortBy}
+                onChange={(event) => setLifeBulletinPublicSortBy(event.target.value)}
+              >
+                <option value="bulletin_date">依日期</option>
+                <option value="created_at">依新增</option>
+              </select>
+              <select
+                value={lifeBulletinPublicSortDir}
+                onChange={(event) => setLifeBulletinPublicSortDir(event.target.value)}
+              >
+                <option value="desc">降冪</option>
+                <option value="asc">升冪</option>
+              </select>
+              <select
+                value={lifeBulletinPublicLimit}
+                onChange={(event) => setLifeBulletinPublicLimit(Number(event.target.value))}
+              >
+                <option value={6}>6 筆</option>
+                <option value={12}>12 筆</option>
+                <option value={24}>24 筆</option>
+              </select>
+            </div>
+          </div>
+          <div className="life-bulletin-grid">
+            {lifeBulletinPublic.length ? (
+              lifeBulletinPublic.map((item, index) => (
+                <article
+                  key={item.id}
+                  className="life-bulletin-card"
+                  style={{ "--delay": `${index * 0.05}s` } as React.CSSProperties}
+                >
+                  <div className="life-bulletin-body">
+                    <p className="muted">日期：{formatDateLabel(item.bulletin_date)}</p>
+                    <p className="life-bulletin-content">{item.content}</p>
+                  </div>
+                  {item.video_url && (
+                    <a
+                      className="button outline small"
+                      href={item.video_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      觀看影片
+                    </a>
+                  )}
+                </article>
+              ))
+            ) : (
+              <div className="week-empty muted">目前尚無 Life 快報。</div>
+            )}
+          </div>
+          <div className="pager">
+            <button
+              className="button outline small"
+              onClick={() =>
+                setLifeBulletinPublicOffset(
+                  Math.max(0, lifeBulletinPublicOffset - lifeBulletinPublicLimit)
+                )
+              }
+            >
+              上一頁
+            </button>
+            <span className="muted">
+              第 {Math.floor(lifeBulletinPublicOffset / lifeBulletinPublicLimit) + 1} 頁
+            </span>
+            <button
+              className="button outline small"
+              onClick={() => setLifeBulletinPublicOffset(lifeBulletinPublicOffset + lifeBulletinPublicLimit)}
+            >
+              下一頁
+            </button>
+          </div>
+        </section>
+      )}
+{activeView === "messages" && (
         <section className="section page-view">
           <div className="section-header">
             <div>
@@ -2111,39 +2936,57 @@ export default function App() {
           </div>
           <div className="message-grid message-list">
             {sundayMessages.length ? (
-              sundayMessages.map((message, index) => (
-                <article
-                  key={message.id}
-                  className="message-card"
-                  style={{ "--delay": `${index * 0.06}s` } as React.CSSProperties}
-                >
-                  <div className="message-card-body">
-                    <div className="message-card-header">
-                      <h3>{message.title}</h3>
-                      {message.speaker && <span className="pill">{message.speaker}</span>}
-                    </div>
-                    <p className="muted">
-                      日期：{formatDateLabel(message.message_date)}
-                    </p>
-                    <p className="muted">
-                      分站：{resolveSiteName(message.site_id)}
-                    </p>
-                    {message.description && (
-                      <p className="message-description muted">{message.description}</p>
-                    )}
-                    <div className="message-actions">
-                      <a
-                        className="button outline small"
-                        href={message.youtube_url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        觀看影片
-                      </a>
-                    </div>
-                  </div>
-                </article>
-              ))
+              sundayMessages.map((message, index) => {
+                const thumbnailUrl = resolveYouTubeThumbnail(message.youtube_url);
+                return (
+                  <article
+                      key={message.id}
+                      className="message-card"
+                      style={{ "--delay": `${index * 0.06}s` } as React.CSSProperties}
+                    >
+                      <div className="message-card-body">
+                        <div className="message-card-header">
+                          <h3>{message.title}</h3>
+                        </div>
+                        <p className="muted">主日：{formatDateLabel(message.message_date)}</p>
+                        <p className="muted">分站：{resolveSiteName(message.site_id)}</p>
+                        {message.speaker && (
+                          <p className="muted">講員：{message.speaker}</p>
+                        )}
+                      </div>
+                      <div className="message-card-side">
+                        <div className="message-thumb">
+                          {thumbnailUrl ? (
+                            <a
+                              href={message.youtube_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="message-thumb-link"
+                            >
+                              <img src={thumbnailUrl} alt={`${message.title} 縮圖`} />
+                            </a>
+                          ) : (
+                            <div className="message-thumb-placeholder muted">無縮圖</div>
+                          )}
+                        </div>
+                        <div className="message-actions">
+                          <a
+                            className="button outline small"
+                            href={message.youtube_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            觀看影片
+                          </a>
+                        </div>
+                      </div>
+                    
+                      {message.description && (
+                        <p className="message-description muted message-description-full">{message.description}</p>
+                      )}
+                    </article>
+                );
+              })
             ) : (
               <div className="week-empty muted">尚無主日聚會信息。</div>
             )}
@@ -2259,13 +3102,19 @@ export default function App() {
       {activeView === "registration" && (
         <RegistrationView
           registrationEvent={registrationEvent}
+          registrationRecord={registrationRecord}
           currentUserLabel={currentUserLabel}
           registrationForm={registrationForm}
           setRegistrationForm={setRegistrationForm}
           registrationMessage={registrationMessage}
           registrationSubmitting={registrationSubmitting}
           onSubmit={handleSubmitRegistration}
-          onBack={() => setActiveView("events")}
+          onBack={() => {
+            setActiveView("events");
+            setRegistrationEvent(null);
+            setRegistrationRecord(null);
+            setRegistrationMessage("");
+          }}
           resolveSiteName={resolveSiteName}
           formatDateRange={formatDateRange}
         />
@@ -2557,91 +3406,13 @@ export default function App() {
               <h2>代禱 / 會員 / 活動 管理入口</h2>
             </div>
           </div>
-          <div className="panel form-panel">
-            <h3>本週金句設定</h3>
-            <form className="form-grid" onSubmit={handleUpdateWeeklyVerse}>
-              <label className="field">
-                分站
-                <select
-                  value={weeklyVerseSiteId}
-                  onChange={(event) =>
-                    setWeeklyVerseForm((prev) => ({ ...prev, siteId: event.target.value }))
-                  }
-                  disabled={weeklyVerseSiteLocked}
-                >
-                  <option value="11111111-1111-1111-1111-111111111111">生命河中心</option>
-                  <option value="22222222-2222-2222-2222-222222222222">光復教會</option>
-                  <option value="33333333-3333-3333-3333-333333333333">第二教會</option>
-                  <option value="44444444-4444-4444-4444-444444444444">府中教會</option>
-                </select>
-              </label>
-              <label className="field">
-                週日日期
-                <input
-                  type="date"
-                  value={weeklyVerseForm.weekStart}
-                  onChange={(event) =>
-                    setWeeklyVerseForm((prev) => ({ ...prev, weekStart: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field field-full">
-                金句內容
-                <textarea
-                  rows={3}
-                  value={weeklyVerseForm.text}
-                  onChange={(event) =>
-                    setWeeklyVerseForm((prev) => ({ ...prev, text: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field">
-                經文出處
-                <input
-                  value={weeklyVerseForm.reference}
-                  onChange={(event) =>
-                    setWeeklyVerseForm((prev) => ({ ...prev, reference: event.target.value }))
-                  }
-                />
-              </label>
-              <div className="field">
-                <button className="button primary" type="submit">
-                  {weeklyVerseEditingId ? "更新金句" : "新增金句"}
-                </button>
-              </div>
-            </form>
-            {weeklyVerseMessage && <p className="muted">{weeklyVerseMessage}</p>}
-            <div className="weekly-verse-list">
-              {weeklyVerseList.length ? (
-                weeklyVerseList.map((item) => (
-                  <div key={item.id} className="weekly-verse-item">
-                    <div>
-                      <p className="muted">週日：{formatWeekStartDate(item.week_start)}</p>
-                      <p>「{item.text}」</p>
-                      <p className="muted">{item.reference}</p>
-                    </div>
-                    <div className="button-row">
-                      <button
-                        className="button outline small"
-                        onClick={() => handleEditWeeklyVerse(item)}
-                      >
-                        編輯
-                      </button>
-                      <button
-                        className="button ghost small"
-                        onClick={() => handleDeleteWeeklyVerse(item.id)}
-                      >
-                        刪除
-                      </button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="muted">尚無金句紀錄。</p>
-              )}
-            </div>
-          </div>
           <div className="admin-tabs">
+            <button
+              className={`tab-button ${adminTab === "weekly-verse" ? "active" : ""}`}
+              onClick={() => setAdminTab("weekly-verse")}
+            >
+              本週金句設定
+            </button>
             <button
               className={`tab-button ${adminTab === "prayers" ? "active" : ""}`}
               onClick={() => setAdminTab("prayers")}
@@ -2666,8 +3437,135 @@ export default function App() {
             >
               主日信息管理
             </button>
+            <button
+              className={`tab-button ${adminTab === "life-bulletins" ? "active" : ""}`}
+              onClick={() => setAdminTab("life-bulletins")}
+            >
+              Life 快報
+            </button>
 
           </div>
+          {adminTab === "weekly-verse" && (
+            <div className="panel form-panel">
+              <div className="panel-header">
+                <div>
+                  <h3>本週金句設定</h3>
+                  <p className="muted">更新各分站本週主日金句</p>
+                </div>
+              </div>
+              <form className="form-grid" onSubmit={handleUpdateWeeklyVerse}>
+                <label className="field">
+                  {"分站"}
+                  <select
+                    value={weeklyVerseSiteId}
+                    onChange={(event) =>
+                      setWeeklyVerseForm((prev) => ({ ...prev, siteId: event.target.value }))
+                    }
+                    disabled={weeklyVerseSiteLocked}
+                  >
+                    <option value="11111111-1111-1111-1111-111111111111">
+                      {resolveSiteName("11111111-1111-1111-1111-111111111111")}
+                    </option>
+                    <option value="22222222-2222-2222-2222-222222222222">
+                      {resolveSiteName("22222222-2222-2222-2222-222222222222")}
+                    </option>
+                    <option value="33333333-3333-3333-3333-333333333333">
+                      {resolveSiteName("33333333-3333-3333-3333-333333333333")}
+                    </option>
+                    <option value="44444444-4444-4444-4444-444444444444">
+                      {resolveSiteName("44444444-4444-4444-4444-444444444444")}
+                    </option>
+                  </select>
+                </label>
+                <label className="field">
+                  {"週日日期"}
+                  <input
+                    type="date"
+                    value={weeklyVerseForm.weekStart}
+                    onChange={(event) =>
+                      setWeeklyVerseForm((prev) => ({ ...prev, weekStart: event.target.value }))
+                    }
+                    required
+                  />
+                </label>
+                <label className="field field-full">
+                  {"金句內容"}
+                  <textarea
+                    value={weeklyVerseForm.text}
+                    onChange={(event) =>
+                      setWeeklyVerseForm((prev) => ({ ...prev, text: event.target.value }))
+                    }
+                    required
+                  />
+                </label>
+                <label className="field field-full">
+                  {"經文出處"}
+                  <input
+                    type="text"
+                    value={weeklyVerseForm.reference}
+                    onChange={(event) =>
+                      setWeeklyVerseForm((prev) => ({ ...prev, reference: event.target.value }))
+                    }
+                    required
+                  />
+                </label>
+                <label className="field field-full">
+                  {"本週讀經進度"}
+                  <input
+                    type="text"
+                    value={weeklyVerseForm.readingPlan}
+                    onChange={(event) =>
+                      setWeeklyVerseForm((prev) => ({ ...prev, readingPlan: event.target.value }))
+                    }
+                  />
+                </label>
+                <div className="field">
+                  <button className="button primary" type="submit">
+                    {weeklyVerseEditingId ? "更新金句" : "新增金句"}
+                  </button>
+                </div>
+              </form>
+              {weeklyVerseMessage && <p className="muted">{weeklyVerseMessage}</p>}
+              <div className="weekly-verse-list">
+                {weeklyVerseList.length ? (
+                  weeklyVerseList.map((item) => (
+                    <div key={item.id} className="weekly-verse-item">
+                      <div>
+                        <p className="muted">
+                          {"週日："}
+                          {formatWeekStartDate(item.week_start)}
+                        </p>
+                        <p>「{item.text}」</p>
+                        <p className="muted">{item.reference}</p>
+                        {item.reading_plan && (
+                          <p className="muted">
+                            {"本週讀經進度："}
+                            {item.reading_plan}
+                          </p>
+                        )}
+                      </div>
+                      <div className="button-row">
+                        <button
+                          className="button ghost small"
+                          onClick={() => handleEditWeeklyVerse(item)}
+                        >
+                          {"編輯"}
+                        </button>
+                        <button
+                          className="button ghost small"
+                          onClick={() => handleDeleteWeeklyVerse(item.id)}
+                        >
+                          {"刪除"}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="muted">{"尚無金句紀錄。"}</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {adminTab === "prayers" && (
             <>
@@ -2801,11 +3699,13 @@ export default function App() {
                 <div>
                   <label>分站</label>
                   <select value={adminSundayMessageSiteId} disabled>
-                    {Object.values(siteUuidByCode).map((siteId) => (
-                      <option key={siteId} value={siteId}>
-                        {resolveSiteName(siteId)}
+                    {adminSundayMessageSiteId ? (
+                      <option value={adminSundayMessageSiteId}>
+                        {resolveSiteName(adminSundayMessageSiteId)}
                       </option>
-                    ))}
+                    ) : (
+                      <option value="">請先設定帳號所屬分站</option>
+                    )}
                   </select>
                 </div>
                 <div>
@@ -2868,6 +3768,7 @@ export default function App() {
                 <div className="field-full">
                   <label>信息簡介</label>
                   <textarea
+                    className="textarea-large"
                     value={sundayMessageForm.description}
                     onChange={(event) =>
                       setSundayMessageForm((prev) => ({
@@ -2886,44 +3787,64 @@ export default function App() {
               {sundayMessageMessage && <p className="muted">{sundayMessageMessage}</p>}
               <div className="weekly-verse-list message-admin-list">
                 {adminSundayMessages.length ? (
-                  adminSundayMessages.map((item) => (
-                    <div key={item.id} className="weekly-verse-item message-admin-item">
-                      <div>
-                        <h4>{item.title}</h4>
-                        <p className="muted">
-                          主日：{formatDateLabel(item.message_date)}
-                        </p>
-                        <p className="muted">
-                          分站：{resolveSiteName(item.site_id)}
-                        </p>
-                        {item.speaker && (
-                          <p className="muted">講員：{item.speaker}</p>
-                        )}
-                        <a
-                          className="muted message-link"
-                          href={item.youtube_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {item.youtube_url}
-                        </a>
+                  adminSundayMessages.map((item) => {
+                    const thumbnailUrl = resolveYouTubeThumbnail(item.youtube_url);
+                    return (
+                      <div key={item.id} className="weekly-verse-item message-admin-item">
+                        <div>
+                          <h4>{item.title}</h4>
+                          <p className="muted">
+                            主日：{formatDateLabel(item.message_date)}
+                          </p>
+                          <p className="muted">
+                            分站：{resolveSiteName(item.site_id)}
+                          </p>
+                          {item.speaker && (
+                            <p className="muted">講員：{item.speaker}</p>
+                          )}
+                          {item.description && (
+                            <p className="message-description muted">{item.description}</p>
+                          )}
+                          <a
+                            className="muted message-link"
+                            href={item.youtube_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {item.youtube_url}
+                          </a>
+                        </div>
+                        <div className="message-thumb">
+                          {thumbnailUrl ? (
+                            <a
+                              href={item.youtube_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="message-thumb-link"
+                            >
+                              <img src={thumbnailUrl} alt={`${item.title} 縮圖`} />
+                            </a>
+                          ) : (
+                            <div className="message-thumb-placeholder muted">無縮圖</div>
+                          )}
+                        </div>
+                        <div className="button-row">
+                          <button
+                            className="button ghost small"
+                            onClick={() => handleEditSundayMessage(item)}
+                          >
+                            編輯
+                          </button>
+                          <button
+                            className="button ghost small"
+                            onClick={() => handleDeleteSundayMessage(item.id)}
+                          >
+                            刪除
+                          </button>
+                        </div>
                       </div>
-                      <div className="button-row">
-                        <button
-                          className="button ghost small"
-                          onClick={() => handleEditSundayMessage(item)}
-                        >
-                          編輯
-                        </button>
-                        <button
-                          className="button ghost small"
-                          onClick={() => handleDeleteSundayMessage(item.id)}
-                        >
-                          刪除
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <p className="muted">尚無主日信息紀錄。</p>
                 )}
@@ -2949,6 +3870,278 @@ export default function App() {
                   }
                 >
                   下一頁
+                </button>
+              </div>
+            </div>
+          )}
+
+          {adminTab === "life-bulletins" && (
+            <div className="panel form-panel">
+              <div className="panel-header">
+                <h3>{"Life \u5feb\u5831\u7ba1\u7406"}</h3>
+                {lifeBulletinEditingId && (
+                  <button
+                    className="button ghost small"
+                    onClick={() => {
+                      setLifeBulletinEditingId(null);
+                      setLifeBulletinForm({
+                        bulletinDate: "",
+                        content: "",
+                        videoUrl: "",
+                        status: "Draft",
+                      });
+                      setLifeBulletinVideoFile(null);
+                    }}
+                  >
+                    {"\u53d6\u6d88\u7de8\u8f2f"}
+                  </button>
+                )}
+              </div>
+              <div className="panel-subheader life-bulletin-filters">
+                <div className="filter-bar">
+                  <input
+                    type="search"
+                    placeholder="搜尋內容或影片連結"
+                    value={lifeBulletinQuery}
+                    onChange={(event) => setLifeBulletinQuery(event.target.value)}
+                  />
+                  <select
+                    value={lifeBulletinStatus}
+                    onChange={(event) => setLifeBulletinStatus(event.target.value)}
+                  >
+                    <option value="">{"\u5168\u90e8\u72c0\u614b"}</option>
+                    <option value="Draft">{"\u8349\u7a3f"}</option>
+                    <option value="Published">{"\u5df2\u767c\u5e03"}</option>
+                  </select>
+                  <select
+                    value={lifeBulletinSortBy}
+                    onChange={(event) => setLifeBulletinSortBy(event.target.value)}
+                  >
+                    <option value="bulletin_date">{"\u4f9d\u65e5\u671f"}</option>
+                    <option value="created_at">{"\u4f9d\u65b0\u589e"}</option>
+                  </select>
+                  <select
+                    value={lifeBulletinSortDir}
+                    onChange={(event) => setLifeBulletinSortDir(event.target.value)}
+                  >
+                    <option value="desc">{"\u964d\u51aa"}</option>
+                    <option value="asc">{"\u5347\u51aa"}</option>
+                  </select>
+                  <select
+                    value={lifeBulletinLimit}
+                    onChange={(event) => setLifeBulletinLimit(Number(event.target.value))}
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
+                  <button
+                    className="button ghost small"
+                    onClick={() => {
+                      setLifeBulletinQuery("");
+                      setLifeBulletinStatus("");
+                      setLifeBulletinSortBy("bulletin_date");
+                      setLifeBulletinSortDir("desc");
+                      setLifeBulletinLimit(10);
+                      setLifeBulletinOffset(0);
+                    }}
+                    type="button"
+                  >
+                    {"\u91cd\u8a2d\u689d\u4ef6"}
+                  </button>
+                </div>
+                <p className="muted">
+                  {"\u5efa\u8b70\uff1a\u5148\u5beb\u5feb\u5831\u5167\u5bb9\uff0c\u518d\u8cbc\u4e0a\u5f71\u7247\u9023\u7d50\u6216\u4e0a\u50b3\u5f71\u7247\u3002"}
+                </p>
+              </div>
+              <form className="form-grid life-bulletin-form" onSubmit={handleSubmitLifeBulletin}>
+                <div>
+                  <label>{"\u5206\u7ad9"}</label>
+                  <select value={currentUser?.site_id || ""} disabled>
+                    {currentUser?.site_id ? (
+                      <option value={currentUser.site_id}>
+                        {resolveSiteName(currentUser.site_id)}
+                      </option>
+                    ) : (
+                      <option value="">{"\u8acb\u5148\u8a2d\u5b9a\u5e33\u865f\u6240\u5c6c\u5206\u7ad9"}</option>
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label>{"\u65e5\u671f"}</label>
+                  <input
+                    type="date"
+                    value={lifeBulletinForm.bulletinDate}
+                    onChange={(event) =>
+                      setLifeBulletinForm((prev) => ({
+                        ...prev,
+                        bulletinDate: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label>{"\u72c0\u614b"}</label>
+                  <select
+                    value={lifeBulletinForm.status}
+                    onChange={(event) =>
+                      setLifeBulletinForm((prev) => ({
+                        ...prev,
+                        status: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="Draft">{"\u8349\u7a3f"}</option>
+                    <option value="Published">{"\u5df2\u767c\u5e03"}</option>
+                  </select>
+                </div>
+                <label className="field field-full life-bulletin-content-field">
+                  {"\u5feb\u5831\u5167\u5bb9"}
+                  <textarea
+                    className="textarea-xl"
+                    value={lifeBulletinForm.content}
+                    onChange={(event) =>
+                      setLifeBulletinForm((prev) => ({
+                        ...prev,
+                        content: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                  <div className="field-helper">
+                    <span>
+                      {"\u76ee\u524d\u5b57\u6578\uff1a" + lifeBulletinForm.content.length}
+                    </span>
+                  </div>
+                </label>
+                <div className="field-full">
+                  <label>{"\u5f71\u7247\u9023\u7d50"}</label>
+                  <input
+                    type="url"
+                    value={lifeBulletinForm.videoUrl}
+                    onChange={(event) =>
+                      setLifeBulletinForm((prev) => ({
+                        ...prev,
+                        videoUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="https://youtu.be/..."
+                  />
+                </div>
+                <div className="field-full">
+                  <label>{"\u4e0a\u50b3\u5f71\u7247"}</label>
+                  <input
+                    type="file"
+                    accept="video/*"
+                    onChange={(event) =>
+                      setLifeBulletinVideoFile(event.target.files?.[0] || null)
+                    }
+                  />
+                  {lifeBulletinVideoFile && (
+                    <p className="muted">
+                      {"\u5df2\u9078\u64c7\uff1a" + lifeBulletinVideoFile.name}
+                    </p>
+                  )}
+                </div>
+                <div className="field-full button-row">
+                  <button className="button primary" type="submit">
+                    {lifeBulletinEditingId ? "\u66f4\u65b0\u5feb\u5831" : "\u65b0\u589e\u5feb\u5831"}
+                  </button>
+                </div>
+              </form>
+              {lifeBulletinMessage && <p className="muted">{lifeBulletinMessage}</p>}
+              <div className="weekly-verse-list message-admin-list">
+                {lifeBulletins.length ? (
+                  lifeBulletins.map((item) => {
+                    const thumbnailUrl = item.video_url
+                      ? resolveYouTubeThumbnail(item.video_url)
+                      : "";
+                    return (
+                      <div key={item.id} className="weekly-verse-item message-admin-item">
+                        <div>
+                          <p className="muted">
+                            {"\u65e5\u671f\uff1a" + formatDateLabel(item.bulletin_date)}
+                          </p>
+                          <p className="muted">
+                            {"\u5206\u7ad9\uff1a" + resolveSiteName(item.site_id)}
+                          </p>
+                          <p className="muted">
+                            {"\u72c0\u614b\uff1a" +
+                              (item.status === "Published"
+                                ? "\u5df2\u767c\u5e03"
+                                : "\u8349\u7a3f")}
+                          </p>
+                          <p className="message-description muted">{item.content}</p>
+                          {item.video_url && (
+                            <a
+                              className="muted message-link"
+                              href={item.video_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {item.video_url}
+                            </a>
+                          )}
+                        </div>
+                        <div className="message-thumb">
+                          {thumbnailUrl ? (
+                            <a
+                              href={item.video_url || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="message-thumb-link"
+                            >
+                              <img src={thumbnailUrl} alt={"Life 快報縮圖"} />
+                            </a>
+                          ) : item.video_url ? (
+                            <video src={item.video_url} controls />
+                          ) : (
+                            <div className="message-thumb-placeholder muted">
+                              {"\u7121\u5f71\u7247"}
+                            </div>
+                          )}
+                        </div>
+                        <div className="button-row">
+                          <button
+                            className="button ghost small"
+                            onClick={() => handleEditLifeBulletin(item)}
+                          >
+                            {"\u7de8\u8f2f"}
+                          </button>
+                          <button
+                            className="button ghost small"
+                            onClick={() => handleDeleteLifeBulletin(item.id)}
+                          >
+                            {"\u522a\u9664"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="muted">{"\u5c1a\u7121 Life \u5feb\u5831\u3002"}</p>
+                )}
+              </div>
+              <div className="pager">
+                <button
+                  className="button outline small"
+                  onClick={() =>
+                    setLifeBulletinOffset(Math.max(0, lifeBulletinOffset - lifeBulletinLimit))
+                  }
+                >
+                  {"\u4e0a\u4e00\u9801"}
+                </button>
+                <span className="muted">
+                  {"\u7b2c " +
+                    (Math.floor(lifeBulletinOffset / lifeBulletinLimit) + 1) +
+                    " \u9801"}
+                </span>
+                <button
+                  className="button outline small"
+                  onClick={() => setLifeBulletinOffset(lifeBulletinOffset + lifeBulletinLimit)}
+                >
+                  {"\u4e0b\u4e00\u9801"}
                 </button>
               </div>
             </div>
@@ -3053,6 +4246,14 @@ export default function App() {
                             發布
                           </button>
                         )}
+                        {event.statusRaw === "Published" && (
+                          <button
+                            className="button outline small"
+                            onClick={() => handleOpenRegistrationAdmin(event.id)}
+                          >
+                            報名狀況
+                          </button>
+                        )}
                         <button
                           className="button ghost small"
                           onClick={() => handleDeleteEvent(event.id)}
@@ -3093,7 +4294,7 @@ export default function App() {
           <div className="modal-panel modal-wide">
             <div className="panel-header">
               <h3>編輯我的資訊</h3>
-              <button className="button ghost small" onClick={handleCloseProfileModal}>
+              <button className="button outline small modal-close" onClick={handleCloseProfileModal}>
                 關閉
               </button>
             </div>
@@ -3185,7 +4386,7 @@ export default function App() {
           <div className="modal-panel modal-wide">
             <div className="panel-header">
               <h3>會員編輯</h3>
-              <button className="button ghost small" onClick={handleCloseUserModal}>
+              <button className="button outline small modal-close" onClick={handleCloseUserModal}>
                 關閉
               </button>
             </div>
@@ -3272,13 +4473,364 @@ export default function App() {
         </div>
       )}
 
+      {lifeBulletinDetailOpen && lifeBulletinDetailItem && (
+        <div className="modal">
+          <div
+            className="modal-backdrop"
+            onClick={() => {
+              setLifeBulletinDetailOpen(false);
+              setLifeBulletinDetailItem(null);
+            }}
+          />
+          <div className="modal-panel modal-wide">
+            <div className="panel-header">
+              <div>
+                <h3>Life 快報完整內容</h3>
+                <p className="muted">
+                  日期：{formatDateLabel(lifeBulletinDetailItem.bulletin_date)} ·
+                  分站：{resolveSiteName(lifeBulletinDetailItem.site_id)}
+                </p>
+              </div>
+              <button
+                className="button outline small modal-close"
+                onClick={() => {
+                  setLifeBulletinDetailOpen(false);
+                  setLifeBulletinDetailItem(null);
+                }}
+              >
+                關閉
+              </button>
+            </div>
+            <div className="life-bulletin-detail-content">
+              {lifeBulletinDetailItem.content}
+            </div>
+            {lifeBulletinDetailItem.video_url && (
+              <a
+                className="button primary"
+                href={lifeBulletinDetailItem.video_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                觀看影片
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      
+      {registrationAdminOpen && (
+        <div className="modal">
+          <div
+            className="modal-backdrop"
+            onClick={() => {
+              setRegistrationAdminOpen(false);
+              setRegistrationAdminEditing(null);
+              setRegistrationAdminMessage("");
+            }}
+          />
+          <div className="modal-panel modal-wide registration-admin-modal">
+            <div className="panel-header">
+              <div>
+                <h3>報名狀況</h3>
+                {registrationAdminEvent && (
+                  <p className="muted">
+                    {registrationAdminEvent.title} ·{" "}
+                    {formatDateRange(
+                      registrationAdminEvent.start_at,
+                      registrationAdminEvent.end_at
+                    )}
+                  </p>
+                )}
+              </div>
+              <div className="button-row">
+                <button className="button outline small" onClick={handleExportRegistrations}>
+                  匯出 Excel
+                </button>
+                <button
+                  className="button outline small modal-close"
+                  onClick={() => {
+                    setRegistrationAdminOpen(false);
+                    setRegistrationAdminEditing(null);
+                    setRegistrationAdminMessage("");
+                  }}
+                >
+                  關閉
+                </button>
+              </div>
+            </div>
+            <div className="filter-bar registration-admin-filters">
+              <input
+                placeholder="搜尋姓名或 Email"
+                value={registrationAdminQuery}
+                onChange={(event) => setRegistrationAdminQuery(event.target.value)}
+              />
+              <select
+                value={registrationAdminStatus}
+                onChange={(event) => setRegistrationAdminStatus(event.target.value)}
+              >
+                <option value="">全部狀態</option>
+                <option value="Pending">待確認</option>
+                <option value="Confirmed">已確認</option>
+                <option value="Waitlisted">候補</option>
+                <option value="Cancelled">已取消</option>
+              </select>
+              <select
+                value={registrationAdminLimit}
+                onChange={(event) => setRegistrationAdminLimit(Number(event.target.value))}
+              >
+                <option value={10}>每頁 10 筆</option>
+                <option value={20}>每頁 20 筆</option>
+                <option value={50}>每頁 50 筆</option>
+              </select>
+            </div>
+            {registrationAdminMessage && <p className="muted">{registrationAdminMessage}</p>}
+            <div className="registration-admin-list">
+              {registrationAdminList.length ? (
+                registrationAdminList.map((item) => (
+                  <article key={item.id} className="registration-admin-item">
+                    <div>
+                      <h4>
+                        {item.user_full_name || "未命名"}{" "}
+                        <span className="muted">({item.user_email || "無 Email"})</span>
+                      </h4>
+                      <p className="muted">電話：{item.user_phone || "未提供"}</p>
+                      <p className="muted">
+                        身分：{item.user_member_type || "未指定"} /{" "}
+                        {item.user_role || "未指定"}
+                      </p>
+                      <p className="muted">狀態：{item.status}</p>
+                      <p className="muted">報名人數：{item.ticket_count}</p>
+                      <p className="muted">代理報名：{item.is_proxy ? "是" : "否"}</p>
+                      <p className="muted">
+                        報名時間：{new Date(item.created_at).toLocaleString("zh-TW")}
+                      </p>
+                      {item.updated_at && (
+                        <p className="muted">
+                          更新時間：{new Date(item.updated_at).toLocaleString("zh-TW")}
+                        </p>
+                      )}
+                      {item.proxy_entries && item.proxy_entries.length > 0 && (
+                        <div className="proxy-summary">
+                          <p className="muted">代理名單：</p>
+                          <ul>
+                            {item.proxy_entries.map((entry, index) => (
+                              <li key={`${item.id}-proxy-${index}`}>
+                                {entry.name}
+                                {entry.relation ? `（${entry.relation}）` : ""}
+                                {entry.phone ? ` · ${entry.phone}` : ""}
+                                {entry.note ? ` · ${entry.note}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                    <div className="button-row">
+                      <button
+                        className="button outline small"
+                        onClick={() => handleEditRegistrationAdmin(item)}
+                      >
+                        編輯
+                      </button>
+                      <button
+                        className="button ghost small"
+                        onClick={() => handleDeleteRegistrationAdmin(item.id)}
+                      >
+                        刪除
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="muted">尚無報名紀錄。</p>
+              )}
+            </div>
+            <div className="pager">
+              <button
+                className="button outline small"
+                onClick={() =>
+                  setRegistrationAdminOffset(
+                    Math.max(0, registrationAdminOffset - registrationAdminLimit)
+                  )
+                }
+              >
+                上一頁
+              </button>
+              <span className="muted">
+                第 {Math.floor(registrationAdminOffset / registrationAdminLimit) + 1} 頁
+              </span>
+              <button
+                className="button outline small"
+                onClick={() =>
+                  setRegistrationAdminOffset(registrationAdminOffset + registrationAdminLimit)
+                }
+              >
+                下一頁
+              </button>
+            </div>
+            {registrationAdminEditing && (
+              <form className="form-grid registration-admin-editor" onSubmit={handleUpdateRegistrationAdmin}>
+                <h4>編輯報名資料</h4>
+                <label className="field">
+                  狀態
+                  <select
+                    value={registrationAdminForm.status}
+                    onChange={(event) =>
+                      setRegistrationAdminForm((prev) => ({
+                        ...prev,
+                        status: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="Pending">待確認</option>
+                    <option value="Confirmed">已確認</option>
+                    <option value="Waitlisted">候補</option>
+                    <option value="Cancelled">已取消</option>
+                  </select>
+                </label>
+                <label className="field">
+                  報名人數
+                  <input
+                    type="number"
+                    min={1}
+                    value={registrationAdminForm.ticketCount}
+                    onChange={(event) =>
+                      setRegistrationAdminForm((prev) => ({
+                        ...prev,
+                        ticketCount: Math.max(1, Number(event.target.value || 1)),
+                      }))
+                    }
+                  />
+                </label>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={registrationAdminForm.isProxy}
+                    onChange={(event) =>
+                      setRegistrationAdminForm((prev) => ({
+                        ...prev,
+                        isProxy: event.target.checked,
+                      }))
+                    }
+                  />
+                  代理報名
+                </label>
+                {registrationAdminForm.isProxy && (
+                  <div className="proxy-list">
+                    {registrationAdminForm.proxyEntries.map((entry, index) => (
+                      <div className="proxy-card" key={`admin-proxy-${index}`}>
+                        <div className="proxy-header">
+                          <span className="pill">代理對象 {index + 1}</span>
+                          {registrationAdminForm.proxyEntries.length > 1 && (
+                            <button
+                              type="button"
+                              className="button ghost small"
+                              onClick={() =>
+                                setRegistrationAdminForm((prev) => ({
+                                  ...prev,
+                                  proxyEntries: prev.proxyEntries.filter((_, idx) => idx !== index),
+                                }))
+                              }
+                            >
+                              移除
+                            </button>
+                          )}
+                        </div>
+                        <label className="field">
+                          姓名
+                          <input
+                            value={entry.name}
+                            onChange={(event) =>
+                              setRegistrationAdminForm((prev) => ({
+                                ...prev,
+                                proxyEntries: prev.proxyEntries.map((item, idx) =>
+                                  idx === index ? { ...item, name: event.target.value } : item
+                                ),
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          電話
+                          <input
+                            value={entry.phone || ""}
+                            onChange={(event) =>
+                              setRegistrationAdminForm((prev) => ({
+                                ...prev,
+                                proxyEntries: prev.proxyEntries.map((item, idx) =>
+                                  idx === index ? { ...item, phone: event.target.value } : item
+                                ),
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          關係
+                          <input
+                            value={entry.relation || ""}
+                            onChange={(event) =>
+                              setRegistrationAdminForm((prev) => ({
+                                ...prev,
+                                proxyEntries: prev.proxyEntries.map((item, idx) =>
+                                  idx === index ? { ...item, relation: event.target.value } : item
+                                ),
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          備註
+                          <textarea
+                            rows={2}
+                            value={entry.note || ""}
+                            onChange={(event) =>
+                              setRegistrationAdminForm((prev) => ({
+                                ...prev,
+                                proxyEntries: prev.proxyEntries.map((item, idx) =>
+                                  idx === index ? { ...item, note: event.target.value } : item
+                                ),
+                              }))
+                            }
+                          />
+                        </label>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="button outline small"
+                      onClick={() =>
+                        setRegistrationAdminForm((prev) => ({
+                          ...prev,
+                          proxyEntries: [
+                            ...prev.proxyEntries,
+                            { name: "", phone: "", relation: "", note: "" },
+                          ],
+                        }))
+                      }
+                    >
+                      新增代理對象
+                    </button>
+                  </div>
+                )}
+                <div className="field-full">
+                  <button className="button primary" type="submit">
+                    更新報名
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {eventModalOpen && (
         <div className="modal">
           <div className="modal-backdrop" onClick={handleCloseEventModal} />
           <div className="modal-panel modal-wide event-modal-panel">
             <div className="panel-header">
               <h3>{selectedEventId ? "編輯活動" : "新增活動"}</h3>
-              <button className="button ghost small" onClick={handleCloseEventModal}>
+              <button className="button outline small modal-close" onClick={handleCloseEventModal}>
                 關閉
               </button>
             </div>

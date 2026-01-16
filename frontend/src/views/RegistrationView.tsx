@@ -23,8 +23,19 @@ type RegistrationFormState = {
   proxyEntries: ProxyEntry[];
 };
 
+type RegistrationRecord = {
+  id: string;
+  status: string;
+  ticket_count: number;
+  is_proxy: boolean;
+  proxy_entries?: ProxyEntry[];
+  created_at: string;
+  updated_at?: string | null;
+};
+
 type RegistrationViewProps = {
   registrationEvent: RegistrationEvent | null;
+  registrationRecord?: RegistrationRecord | null;
   currentUserLabel: string;
   registrationForm: RegistrationFormState;
   setRegistrationForm: React.Dispatch<React.SetStateAction<RegistrationFormState>>;
@@ -38,6 +49,7 @@ type RegistrationViewProps = {
 
 export default function RegistrationView({
   registrationEvent,
+  registrationRecord,
   currentUserLabel,
   registrationForm,
   setRegistrationForm,
@@ -82,6 +94,19 @@ export default function RegistrationView({
               {"\u540d\u984d\uFF1A"}
               {registrationEvent.capacity ?? "\u4e0d\u9650"}
             </p>
+            {registrationRecord && (
+              <div className="registration-status">
+                <p className="pill">{"\u5df2\u5831\u540d"}</p>
+                <p className="muted">
+                  {"\u5831\u540d\u72c0\u614b\uFF1A"}
+                  {registrationRecord.status}
+                </p>
+                <p className="muted">
+                  {"\u5831\u540d\u6642\u9593\uFF1A"}
+                  {new Date(registrationRecord.created_at).toLocaleString("zh-TW")}
+                </p>
+              </div>
+            )}
           </div>
           <form className="registration-form" onSubmit={onSubmit}>
             <div className="form-section">
@@ -90,13 +115,17 @@ export default function RegistrationView({
                 {"\u5e33\u865f\u59d3\u540d\uFF1A"}
                 {currentUserLabel}
               </p>
+              {registrationRecord && (
+                <p className="muted">{"\u53ef\u4ee5\u76f4\u63a5\u4fee\u6539\u4e0b\u65b9\u5831\u540d\u8cc7\u6599\u3002"}</p>
+              )}
               <label className="field">
-                {"\u4eba\u6578"}
+                {"\u4eba\u6578\uff08\u81ea\u52d5\u8a08\u7b97\uff09"}
                 <input
                   type="number"
                   min={1}
                   max={registrationEvent.capacity ?? undefined}
                   value={registrationForm.ticketCount}
+                  readOnly
                   onChange={(event) =>
                     setRegistrationForm((prev) => ({
                       ...prev,
@@ -229,7 +258,11 @@ export default function RegistrationView({
               </div>
             )}
             <button className="button primary" type="submit" disabled={registrationSubmitting}>
-              {registrationSubmitting ? "\u9001\u51fa\u4e2d..." : "\u9001\u51fa\u5831\u540d"}
+              {registrationSubmitting
+                ? "\u9001\u51fa\u4e2d..."
+                : registrationRecord
+                ? "\u66f4\u65b0\u5831\u540d\u8cc7\u6599"
+                : "\u9001\u51fa\u5831\u540d"}
             </button>
             {registrationMessage && <p className="muted">{registrationMessage}</p>}
           </form>
